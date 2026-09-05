@@ -450,3 +450,27 @@ This release establishes **CodeForge** as a powerful, production-ready code edit
 
 ## 10.8.0
   - FIX: MacOS crash
+
+## 10.8.0+dart.1
+
+The first fork release. The Rust editing core is reimplemented in Dart and the
+editor picks up a batch of fixes made while using it in a real app. The public
+API is unchanged — `RustLib.init()` still exists and is still safe to call, it
+just has nothing left to open.
+
+  - CHANGE: The `flutter_rust_bridge` core is replaced by a pure-Dart one under
+    `lib/src/core/`. `flutter_rust_bridge`, cargokit, the `rust/` crate and the
+    per-platform `ffiPlugin` registration are gone, so the package contributes
+    no native build step on any platform.
+  - FEATURE: Find and replace — replace one or all, with the full match list.
+  - FEATURE: Page Up/Page Down move the caret, and the Mac spellings of the
+    document and line jumps are recognised.
+  - FIX: Highlighting repaints from the text on screen rather than the text of a
+    keystroke ago, and a paragraph is no longer reused past the colouring it was
+    painted from.
+  - FIX: Lines coloured on the background isolate keep their colours.
+  - FIX: A semantic-token answer about another document no longer erases this
+    one, and a classification that goes missing is asked for again.
+  - FIX: The viewport is rechecked once scrolling stops.
+  - PERF: The editor stops repainting at rest, and wrapping a large file no
+    longer costs the scroll position every frame.

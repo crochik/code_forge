@@ -1,4 +1,4 @@
-import 'package:code_forge/src/rust/api/rope.dart';
+import 'package:code_forge/src/core/rope.dart';
 import 'package:flutter/material.dart';
 
 class Rope {

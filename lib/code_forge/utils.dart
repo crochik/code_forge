@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -184,6 +185,56 @@ class GutterBuilder {
   GutterBuilder({required this.builder, this.includeReplacedIndex = true});
 }
 
+/// Accepts when any of [alternatives] does.
+///
+/// One action, more than one way to press it. A [SingleActivator] matches an
+/// exact set of modifiers, so "Control + Home, or ⌘ + Up on a Mac" cannot be
+/// written as one — and writing it as two fields would make every caller
+/// check both.
+class AnyShortcut implements ShortcutActivator {
+  const AnyShortcut(this.alternatives);
+
+  /// The spellings of this shortcut. Order carries no meaning.
+  final List<ShortcutActivator> alternatives;
+
+  @override
+  Iterable<LogicalKeyboardKey>? get triggers => [
+    for (final alternative in alternatives) ...?alternative.triggers,
+  ];
+
+  @override
+  bool accepts(KeyEvent event, HardwareKeyboard state) =>
+      alternatives.any((alternative) => alternative.accepts(event, state));
+
+  @override
+  String debugDescribeKeys() =>
+      alternatives.map((a) => a.debugDescribeKeys()).join(' or ');
+}
+
+/// A spelling that only applies on macOS.
+///
+/// ⌘ with an arrow is how macOS says "start of the document" and "start of the
+/// line". The same combination elsewhere is the window manager's — Super +
+/// Arrow tiles a window — so binding it everywhere would take a key the editor
+/// has no business taking.
+class MacShortcut implements ShortcutActivator {
+  const MacShortcut(this.activator);
+
+  /// What to accept when running on macOS.
+  final ShortcutActivator activator;
+
+  @override
+  Iterable<LogicalKeyboardKey>? get triggers => activator.triggers;
+
+  @override
+  bool accepts(KeyEvent event, HardwareKeyboard state) =>
+      defaultTargetPlatform == TargetPlatform.macOS &&
+      activator.accepts(event, state);
+
+  @override
+  String debugDescribeKeys() => '${activator.debugDescribeKeys()} (macOS)';
+}
+
 /// Keyboard shortcuts used by the [CodeForge].
 /// Ovrride to use your own custom shortcuts.
 /// <br>
@@ -209,23 +260,47 @@ class GutterBuilder {
 /// Note: The LSP inlay hints shortcut `(Ctrl + Alt)` is not modifiable.<br>
 /// Also, core operations like cut, copy, paste, select all, undo, redo aren't modifiable.
 class CodeForgeKeyboardShortcuts {
-  /// Place the cursor at the starting position of the current line.
-  /// Defaults to `Ctrl + home`
+  /// Place the cursor at the start of the document.
+  /// Defaults to `Ctrl + home`, or `⌘ + arrowUp` on macOS.
   final ShortcutActivator jumpToDocumentStart;
 
-  /// Place the cursor at the starting position of the current line.
-  /// Defaults to `Ctrl + end`
+  /// Place the cursor at the end of the document.
+  /// Defaults to `Ctrl + end`, or `⌘ + arrowDown` on macOS.
   final ShortcutActivator jumpToDocumentEnd;
 
-  /// Similar to [jumpToDocumentStart], place the cursor at the starting position of the current line
-  /// and selecting the text from the start position to the document start.
-  /// Defaults to `Ctrl + Shift + home`.
+  /// Similar to [jumpToDocumentStart], place the cursor at the start of the
+  /// document and select the text from the start position to it.
+  /// Defaults to `Ctrl + Shift + home`, or `⌘ + Shift + arrowUp` on macOS.
   final ShortcutActivator jumpToDocumentStartAndSelectText;
 
-  /// Similar to [jumpToDocumentEnd], place the cursor at the starting position of the current line
-  /// and selecting the text from the start position to the document end.
-  /// Defaults to `Ctrl + Shift + end`.
+  /// Similar to [jumpToDocumentEnd], place the cursor at the end of the
+  /// document and select the text from the start position to it.
+  /// Defaults to `Ctrl + Shift + end`, or `⌘ + Shift + arrowDown` on macOS.
   final ShortcutActivator jumpToDocumentEndAndSelectText;
+
+  /// Place the cursor at the start of the current line.
+  /// Defaults to `home`, or `⌘ + arrowLeft` on macOS.
+  final ShortcutActivator jumpToLineStart;
+
+  /// Place the cursor at the end of the current line.
+  /// Defaults to `end`, or `⌘ + arrowRight` on macOS.
+  final ShortcutActivator jumpToLineEnd;
+
+  /// Move the cursor a page up, keeping its column.
+  /// Defaults to `pageUp` — `Fn + arrowUp` on a Mac keyboard without one.
+  final ShortcutActivator pageUp;
+
+  /// Move the cursor a page down, keeping its column.
+  /// Defaults to `pageDown` — `Fn + arrowDown` on a Mac keyboard without one.
+  final ShortcutActivator pageDown;
+
+  /// Similar to [pageUp], extending the selection to where it lands.
+  /// Defaults to `Shift + pageUp`.
+  final ShortcutActivator selectPageUp;
+
+  /// Similar to [pageDown], extending the selection to where it lands.
+  /// Defaults to `Shift + pageDown`.
+  final ShortcutActivator selectPageDown;
 
   /// Duplicate the selection, if no active selectio, current line gets duplicated.
   /// Defaults to `Ctrl + D`
@@ -383,30 +458,54 @@ class CodeForgeKeyboardShortcuts {
       LogicalKeyboardKey.keyH,
       control: true,
     ),
-    this.jumpToDocumentStart = const SingleActivator(
-      LogicalKeyboardKey.home,
-      control: true,
-    ),
-    this.jumpToDocumentEnd = const SingleActivator(
-      LogicalKeyboardKey.end,
-      control: true,
-    ),
-    this.jumpToDocumentStartAndSelectText = const SingleActivator(
-      LogicalKeyboardKey.home,
-      control: true,
+    this.jumpToDocumentStart = const AnyShortcut([
+      SingleActivator(LogicalKeyboardKey.home, control: true),
+      MacShortcut(SingleActivator(LogicalKeyboardKey.arrowUp, meta: true)),
+    ]),
+    this.jumpToDocumentEnd = const AnyShortcut([
+      SingleActivator(LogicalKeyboardKey.end, control: true),
+      MacShortcut(SingleActivator(LogicalKeyboardKey.arrowDown, meta: true)),
+    ]),
+    this.jumpToDocumentStartAndSelectText = const AnyShortcut([
+      SingleActivator(LogicalKeyboardKey.home, control: true, shift: true),
+      MacShortcut(
+        SingleActivator(LogicalKeyboardKey.arrowUp, meta: true, shift: true),
+      ),
+    ]),
+    this.jumpToDocumentEndAndSelectText = const AnyShortcut([
+      SingleActivator(LogicalKeyboardKey.end, control: true, shift: true),
+      MacShortcut(
+        SingleActivator(LogicalKeyboardKey.arrowDown, meta: true, shift: true),
+      ),
+    ]),
+    this.jumpToLineStart = const AnyShortcut([
+      SingleActivator(LogicalKeyboardKey.home),
+      MacShortcut(SingleActivator(LogicalKeyboardKey.arrowLeft, meta: true)),
+    ]),
+    this.jumpToLineEnd = const AnyShortcut([
+      SingleActivator(LogicalKeyboardKey.end),
+      MacShortcut(SingleActivator(LogicalKeyboardKey.arrowRight, meta: true)),
+    ]),
+    this.selectToLineStart = const AnyShortcut([
+      SingleActivator(LogicalKeyboardKey.home, shift: true),
+      MacShortcut(
+        SingleActivator(LogicalKeyboardKey.arrowLeft, meta: true, shift: true),
+      ),
+    ]),
+    this.selectToLineEnd = const AnyShortcut([
+      SingleActivator(LogicalKeyboardKey.end, shift: true),
+      MacShortcut(
+        SingleActivator(LogicalKeyboardKey.arrowRight, meta: true, shift: true),
+      ),
+    ]),
+    this.pageUp = const SingleActivator(LogicalKeyboardKey.pageUp),
+    this.pageDown = const SingleActivator(LogicalKeyboardKey.pageDown),
+    this.selectPageUp = const SingleActivator(
+      LogicalKeyboardKey.pageUp,
       shift: true,
     ),
-    this.jumpToDocumentEndAndSelectText = const SingleActivator(
-      LogicalKeyboardKey.end,
-      control: true,
-      shift: true,
-    ),
-    this.selectToLineStart = const SingleActivator(
-      LogicalKeyboardKey.home,
-      shift: true,
-    ),
-    this.selectToLineEnd = const SingleActivator(
-      LogicalKeyboardKey.end,
+    this.selectPageDown = const SingleActivator(
+      LogicalKeyboardKey.pageDown,
       shift: true,
     ),
     this.extendMutliCursorDownward = const SingleActivator(

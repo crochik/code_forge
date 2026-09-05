@@ -5,7 +5,7 @@ import 'dart:ui' as ui;
 
 import '../code_forge.dart';
 import './syntax_highlighter.dart';
-import '../src/rust/api/editor.dart';
+import '../src/core/editor.dart';
 
 import 'package:re_highlight/re_highlight.dart';
 import 'package:re_highlight/styles/lightfair.dart';
@@ -211,6 +211,16 @@ class CodeForge extends StatefulWidget {
   /// Whether to show a divider line between gutter and content.
   final bool enableGutterDivider;
 
+  /// Whether a line's laid-out paragraph may be reused across frames.
+  ///
+  /// A paragraph carries its colours baked in, so reusing one is only correct
+  /// while the colouring it was built from is still current. False builds every
+  /// visible line every frame: slower, and immune to any invalidation this
+  /// editor gets wrong. It exists so that "is the colouring wrong, or is a
+  /// *cached* colouring wrong?" can be answered by flipping a switch instead of
+  /// by reasoning about it.
+  final bool cacheParagraphs;
+
   /// Whether to enable local and non LSP autocomplete suggestions.
   /// To control LSP suggestions, use the [capabilities] field of the [LspConfig].
   /// [false] by default because, this may cause delay or jitter in large files.
@@ -302,6 +312,7 @@ class CodeForge extends StatefulWidget {
     this.useSpaceAsTab = false,
     this.enableGutter = true,
     this.enableGutterDivider = false,
+    this.cacheParagraphs = true,
     this.deleteFoldRangeOnDeletingFirstLine = false,
     this.selectionStyle,
     this.gutterStyle,
@@ -344,7 +355,9 @@ class _CodeForgeState extends State<CodeForge> with TickerProviderStateMixin {
   late final ValueNotifier<bool> _selectionActiveNotifier, _isHoveringPopup;
   late final ValueNotifier<List<dynamic>?> _lspActionNotifier;
   late final UndoRedoController _undoRedoController;
-  late final String? _filePath;
+  // Not `late final`: a new `filePath` on the same widget is how a host that
+  // shows more than one file switches between them. See [didUpdateWidget].
+  String? _filePath;
   late final FindController _findController;
   late final VoidCallback _semanticTokensListener;
   late final VoidCallback _controllerListener;
@@ -374,6 +387,7 @@ class _CodeForgeState extends State<CodeForge> with TickerProviderStateMixin {
   int _sugSelIndex = 0, _actionSelIndex = 0;
   String? _selectedSuggestionMd;
   Timer? _hoverTimer, _semanticTokenTimer, _hoverRequestTimer;
+  Timer? _caretBlinkTimer;
   ({String key, Map<String, int> lineChar})? _queuedHoverRequest;
 
   @override
@@ -559,7 +573,10 @@ class _CodeForgeState extends State<CodeForge> with TickerProviderStateMixin {
     _caretBlinkController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 500),
-    )..repeat(reverse: true);
+    )..value = 1.0;
+    // Only while focused: an editor nobody is typing in draws no caret, so
+    // blinking one costs repaints for nothing.
+    if (_focusNode.hasFocus) _startCaretBlink();
 
     _lineHighlightController = AnimationController(
       vsync: this,
@@ -577,6 +594,12 @@ class _CodeForgeState extends State<CodeForge> with TickerProviderStateMixin {
     _controller.semanticTokens.addListener(_semanticTokensListener);
 
     _focusNode.addListener(() {
+      // No caret is drawn without focus, so nothing needs repainting for it.
+      if (_focusNode.hasFocus) {
+        _startCaretBlink();
+      } else {
+        _stopCaretBlink();
+      }
       if (_focusNode.hasFocus && !_readOnly) {
         if (_connection == null || !_connection!.attached) {
           _connection = _attachImeConnection();
@@ -598,21 +621,22 @@ class _CodeForgeState extends State<CodeForge> with TickerProviderStateMixin {
 
     Future.microtask(CustomIcons.loadAllCustomFonts);
 
-    if (_filePath == null && _controller.lspConfig != null) {
+    final openingPath = _filePath;
+    if (openingPath == null && _controller.lspConfig != null) {
       throw ArgumentError(
         "The `filePath` parameter cannot be null inorder to use `LspConfig`."
         "A valid file path is required to use the LSP services.",
       );
     }
 
-    if (_filePath != null) {
+    if (openingPath != null) {
       if (widget.initialText != null) {
         throw ArgumentError(
           'Cannot provide both filePath and initialText to CodeForge.',
         );
-      } else if (_filePath.isNotEmpty) {
-        if (_controller.openedFile != _filePath) {
-          _controller.openedFile = _filePath;
+      } else if (openingPath.isNotEmpty) {
+        if (_controller.openedFile != openingPath) {
+          _controller.openedFile = openingPath;
         }
       }
     } else if (widget.initialText != null && widget.initialText!.isNotEmpty) {
@@ -1020,12 +1044,61 @@ class _CodeForgeState extends State<CodeForge> with TickerProviderStateMixin {
     }
   }
 
+  /// Blinks the caret on a timer rather than an animation.
+  ///
+  /// The caret is drawn on or off — every reader of this controller compares
+  /// `value > 0.5` — but it used to be driven by an `AnimationController` on
+  /// `repeat`, whose every tick calls `markNeedsPaint`. That repainted the
+  /// whole editor at the display's frame rate, forever, to toggle a boolean
+  /// twice a second: an idle editor sat at tens of percent of a core, and on a
+  /// large document each of those repaints is a full paint pass. Two ticks a
+  /// second is the entire requirement.
+  void _startCaretBlink() {
+    _caretBlinkTimer?.cancel();
+    _caretBlinkController.value = 1.0;
+    _caretBlinkTimer = Timer.periodic(
+      const Duration(milliseconds: 500),
+      (_) => _caretBlinkController.value = _caretBlinkController.value > 0.5
+          ? 0.0
+          : 1.0,
+    );
+  }
+
+  /// Stops the blink, and with it the repaints it causes. Used when the editor
+  /// does not have focus, where the caret is not drawn at all.
+  void _stopCaretBlink() {
+    _caretBlinkTimer?.cancel();
+    _caretBlinkTimer = null;
+    _caretBlinkController.value = 0.0;
+  }
+
   void _resetCursorBlink() {
     if (!mounted) return;
-    _caretBlinkController.value = 1.0;
-    _caretBlinkController
-      ..stop()
-      ..repeat(reverse: true);
+    _startCaretBlink();
+  }
+
+  /// Follows a changed [CodeForge.filePath].
+  ///
+  /// An editor showing more than one file switches between them by handing the
+  /// same widget a different path — the editor is the same one, showing
+  /// something else. Every question the editor puts to the language server
+  /// names this path: semantic tokens, hover, code actions. Holding the path
+  /// the widget was first built with asked all of them about a file that was no
+  /// longer on screen, so the file now showing was never classified, and the
+  /// answer already applied — about the other file — stayed painted over it.
+  @override
+  void didUpdateWidget(covariant CodeForge oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    final path = widget.filePath;
+    if (path == null || path.isEmpty || path == _filePath) return;
+
+    _filePath = path;
+    // Usually already done by whoever switched files — `openedFile` is what
+    // reads the file in and tells the server about it, so a host that has to
+    // save the old buffer first does it itself. Setting it again would re-read
+    // the file, so only do it if nobody has.
+    if (_controller.openedFile != path) _controller.openedFile = path;
   }
 
   @override
@@ -1043,6 +1116,7 @@ class _CodeForgeState extends State<CodeForge> with TickerProviderStateMixin {
     _suggestionNotifier.removeListener(_snippetNotifierListener);
     _connection?.close();
     _lspResponsesSubscription?.cancel();
+    _caretBlinkTimer?.cancel();
     _caretBlinkController.dispose();
     _lineHighlightController.dispose();
     _hoverNotifier.dispose();
@@ -1135,6 +1209,42 @@ class _CodeForgeState extends State<CodeForge> with TickerProviderStateMixin {
     }
 
     _controller.pressHomeKey(isShiftPressed: withShift);
+  }
+
+  /// How many lines a page is: what the viewport is showing, less one.
+  ///
+  /// Measured rather than assumed — the editor is whatever size it was given,
+  /// and the old fixed 650 pixels was a page only by coincidence. The line kept
+  /// back is the overlap every editor leaves, so the line being read at the
+  /// edge is still on screen after the jump.
+  int get _linesPerPage {
+    const fallback = 20;
+    if (!_vscrollController.hasClients) return fallback;
+
+    final style = widget.textStyle;
+    final lineHeight = (style?.fontSize ?? 14.0) * (style?.height ?? 1.2);
+    final viewport = _vscrollController.position.viewportDimension;
+    if (lineHeight <= 0 || viewport <= 0) return fallback;
+
+    return max(1, (viewport / lineHeight).floor() - 1);
+  }
+
+  /// Page up or down: the caret moves, and the view follows it.
+  ///
+  /// This used to animate the scroll offset and leave the caret where it was,
+  /// so the keys moved the view out from under whatever you were about to
+  /// type, and there was no way to select by the page at all.
+  void _handlePageKey({required bool up, required bool withShift}) {
+    if (_suggestionNotifier.value != null) {
+      _suggestionNotifier.value = null;
+    }
+
+    final lines = _linesPerPage;
+    _controller.pressPageKey(
+      lines: up ? -lines : lines,
+      isShiftPressed: withShift,
+    );
+    _commonKeyFunctions();
   }
 
   void _handleEndKey(bool withShift) {
@@ -1466,11 +1576,14 @@ class _CodeForgeState extends State<CodeForge> with TickerProviderStateMixin {
       '$_wordCharPattern+|[^$_wordCharPattern\\s]+',
     ).allMatches(lineText).toList();
 
-    int newOffset = lineStart;
-    for (final match in wordMatches) {
-      if (match.end >= lineText.length) break;
-      newOffset = lineStart + match.start;
-    }
+    // `lineText` stops at the caret, so its last run is the word the caret is
+    // in — or, when the caret is on whitespace, the word before it. Either
+    // way that run's start is where the caret belongs. (Upstream skipped the
+    // last run and took the one before it, so every jump went one word too
+    // far: from the end of a line the caret landed on the first word.)
+    final newOffset = wordMatches.isEmpty
+        ? lineStart
+        : lineStart + wordMatches.last.start;
 
     _controller.setSelectionSilently(
       withShift
@@ -1800,6 +1913,75 @@ class _CodeForgeState extends State<CodeForge> with TickerProviderStateMixin {
                                                         isShiftPressed: true,
                                                       );
                                                   _commonKeyFunctions();
+                                                  return KeyEventResult.handled;
+                                                }
+
+                                                // Before the plain `home` and
+                                                // `end` cases below, which
+                                                // these subsume: the activator
+                                                // carries the macOS spelling
+                                                // (⌘ + arrow) as well.
+                                                if (shrtCt.jumpToLineStart
+                                                    .accepts(
+                                                      event,
+                                                      HardwareKeyboard.instance,
+                                                    )) {
+                                                  _handleHomeKey(false);
+                                                  _commonKeyFunctions();
+                                                  return KeyEventResult.handled;
+                                                }
+
+                                                if (shrtCt.jumpToLineEnd.accepts(
+                                                  event,
+                                                  HardwareKeyboard.instance,
+                                                )) {
+                                                  _handleEndKey(false);
+                                                  _commonKeyFunctions();
+                                                  return KeyEventResult.handled;
+                                                }
+
+                                                if (shrtCt.selectPageUp.accepts(
+                                                  event,
+                                                  HardwareKeyboard.instance,
+                                                )) {
+                                                  _handlePageKey(
+                                                    up: true,
+                                                    withShift: true,
+                                                  );
+                                                  return KeyEventResult.handled;
+                                                }
+
+                                                if (shrtCt.selectPageDown
+                                                    .accepts(
+                                                      event,
+                                                      HardwareKeyboard.instance,
+                                                    )) {
+                                                  _handlePageKey(
+                                                    up: false,
+                                                    withShift: true,
+                                                  );
+                                                  return KeyEventResult.handled;
+                                                }
+
+                                                if (shrtCt.pageUp.accepts(
+                                                  event,
+                                                  HardwareKeyboard.instance,
+                                                )) {
+                                                  _handlePageKey(
+                                                    up: true,
+                                                    withShift: false,
+                                                  );
+                                                  return KeyEventResult.handled;
+                                                }
+
+                                                if (shrtCt.pageDown.accepts(
+                                                  event,
+                                                  HardwareKeyboard.instance,
+                                                )) {
+                                                  _handlePageKey(
+                                                    up: false,
+                                                    withShift: false,
+                                                  );
                                                   return KeyEventResult.handled;
                                                 }
 
@@ -2659,36 +2841,6 @@ class _CodeForgeState extends State<CodeForge> with TickerProviderStateMixin {
                                                           .handled;
 
                                                     case LogicalKeyboardKey
-                                                        .pageUp:
-                                                      _vscrollController
-                                                          .animateTo(
-                                                            _vscrollController
-                                                                    .offset -
-                                                                650,
-                                                            duration: Duration(
-                                                              milliseconds: 300,
-                                                            ),
-                                                            curve: Curves.ease,
-                                                          );
-                                                      return KeyEventResult
-                                                          .handled;
-
-                                                    case LogicalKeyboardKey
-                                                        .pageDown:
-                                                      _vscrollController
-                                                          .animateTo(
-                                                            _vscrollController
-                                                                    .offset +
-                                                                650,
-                                                            duration: Duration(
-                                                              milliseconds: 300,
-                                                            ),
-                                                            curve: Curves.ease,
-                                                          );
-                                                      return KeyEventResult
-                                                          .handled;
-
-                                                    case LogicalKeyboardKey
                                                         .enter:
                                                       if (_aiNotifier.value !=
                                                           null) {
@@ -2738,6 +2890,8 @@ class _CodeForgeState extends State<CodeForge> with TickerProviderStateMixin {
                                                     widget.enableGutter,
                                                 enableGutterDivider:
                                                     widget.enableGutterDivider,
+                                                cacheParagraphs:
+                                                    widget.cacheParagraphs,
                                                 gutterStyle: _gutterStyle,
                                                 selectionStyle: _selectionStyle,
                                                 diagnostics:
@@ -4181,6 +4335,7 @@ class _CodeField extends LeafRenderObjectWidget {
   final AnimationController lineHighlightController;
   final TextStyle? textStyle;
   final bool enableFolding, enableGuideLines, enableGutter, enableGutterDivider;
+  final bool cacheParagraphs;
   final GutterStyle gutterStyle;
   final CodeSelectionStyle selectionStyle;
   final List<LspErrors> diagnostics;
@@ -4216,6 +4371,7 @@ class _CodeField extends LeafRenderObjectWidget {
     required this.enableGuideLines,
     required this.enableGutter,
     required this.enableGutterDivider,
+    this.cacheParagraphs = true,
     required this.gutterStyle,
     required this.gutterBuilder,
     required this.selectionStyle,
@@ -4271,6 +4427,7 @@ class _CodeField extends LeafRenderObjectWidget {
       enableGuideLines: enableGuideLines,
       enableGutter: enableGutter,
       enableGutterDivider: enableGutterDivider,
+      cacheParagraphs: cacheParagraphs,
       gutterStyle: gutterStyle,
       gutterBuilder: gutterBuilder,
       selectionStyle: selectionStyle,
@@ -4310,6 +4467,9 @@ class _CodeField extends LeafRenderObjectWidget {
       });
     }
     renderObject
+      // Before the rest: what the editor asks the server about, and what it
+      // keeps from the last answer, both belong to a file.
+      ..filePath = filePath
       ..updateDiagnostics(diagnostics)
       ..editorTheme = editorTheme
       ..language = language
@@ -4322,6 +4482,7 @@ class _CodeField extends LeafRenderObjectWidget {
       ..enableGuideLines = enableGuideLines
       ..enableGutter = enableGutter
       ..enableGutterDivider = enableGutterDivider
+      ..cacheParagraphs = cacheParagraphs
       ..gutterStyle = gutterStyle
       ..selectionStyle = selectionStyle
       ..ghostTextStyle = ghostTextStyle
@@ -4331,7 +4492,7 @@ class _CodeField extends LeafRenderObjectWidget {
 
 class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
   final CodeForgeController controller;
-  final String? languageId, filePath;
+  final String? languageId;
   final ScrollController vscrollController, hscrollController;
   final FocusNode focusNode;
   final AnimationController caretBlinkController;
@@ -4363,6 +4524,21 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
   _indentGuideCache = {};
   final Map<String, int> _indentEndLineCache = {};
   final Map<String, List<ui.TextBox>> _diagnosticPathCache = {};
+
+  /// The highlighter's colouring version that [_paragraphCache] was built
+  /// from. See [_dropParagraphsBuiltFromOldColouring].
+  int _paragraphColouringVersion = -1;
+
+  /// The sampled average from [_estimateWrappedHeight], and what it was
+  /// measured for.
+  double? _wrappedHeightPerLine;
+  double _wrappedHeightSampleWidth = -1;
+  int _wrappedHeightSampleLineCount = -1;
+
+  /// Diagnostics by the line they touch, and the worst severity per line.
+  /// Rebuilt by [_indexDiagnostics] whenever the diagnostics change.
+  final Map<int, List<LspErrors>> _diagnosticsByLine = {};
+  final Map<int, int> _lineSeverities = {};
   final Map<String, List<ui.TextBox>> _searchHighlightCache = {};
   final Map<String, double> _lineOffsetCache = {};
   final Map<
@@ -4406,6 +4582,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
   Offset? _pointerDownPosition;
   Offset _currentPosition = Offset.zero;
   bool _enableFolding, _enableGuideLines, _enableGutter, _enableGutterDivider;
+  bool _cacheParagraphs;
   bool _isFoldToggleInProgress = false, _lineWrap;
   bool _foldRangesNeedsClear = false;
   Set<int> _foldedLineIndices = {};
@@ -4449,6 +4626,108 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
   int _virtualRemovedTotalLineCount = 0;
   Animation<double>? _lineHighlightAnimation;
 
+  /// The file on screen. Everything asked of the language server names it.
+  String? get filePath => _filePath;
+  String? _filePath;
+
+  /// Points the editor at another file.
+  ///
+  /// The bookkeeping below is all per-file: what version was last asked about,
+  /// and the classification currently painted. Carried across a switch, the
+  /// version match suppresses the request for the file now showing, and the
+  /// spans keep painting the previous file's colouring onto it — at whatever
+  /// line numbers they happened to fall.
+  set filePath(String? value) {
+    if (value == _filePath) return;
+    _filePath = value;
+
+    _semanticTokenTimer?.cancel();
+    _scrollIdleTimer?.cancel();
+    _semanticTokenRequestSerial++;
+    _lastSemanticTokenRequestVersion = -1;
+    _lastSemanticTokenRequestStartLine = -1;
+    _lastSemanticTokenRequestEndLine = -1;
+    _lastVisibleFirstLine = -1;
+    _lastVisibleLastLine = -1;
+    _idleRecheckedVersion = -1;
+    // Any answer published up to now was about the file being left, including
+    // one still in flight to `updateSemanticTokens` after this frame.
+    _lastAppliedSemanticVersion = controller.semanticTokens.value.$2 + 1;
+    _syntaxHighlighter.forgetSemanticTokens();
+
+    _paragraphCache.clear();
+    _lineTextCache.clear();
+    _lineWidthCache.clear();
+    _lineHeightCache.clear();
+    _bracketCache.clear();
+    _indentGuideCache.clear();
+    _indentEndLineCache.clear();
+    _diagnosticPathCache.clear();
+    _searchHighlightCache.clear();
+    _lineOffsetCache.clear();
+    _caretInfoCache.clear();
+    _lineIndentCache.clear();
+    markNeedsPaint();
+  }
+
+  /// The padded visible range of the last paint, for [_recheckAfterScrolling].
+  int _lastVisibleFirstLine = -1, _lastVisibleLastLine = -1;
+
+  /// The document version whose viewport has already been re-asked about, so a
+  /// screenful with genuinely nothing to classify is asked about once and not
+  /// once per scroll.
+  int _idleRecheckedVersion = -1;
+
+  Timer? _scrollIdleTimer;
+
+  /// Restarts the wait for scrolling to stop.
+  ///
+  /// Mid-scroll is the wrong moment to ask anything: the viewport is still
+  /// moving, and the answer would be about a screenful that has already gone
+  /// past. Waiting for the last scroll of a gesture asks once, about where the
+  /// reader actually stopped.
+  void _scrollSettled() {
+    _scrollIdleTimer?.cancel();
+    _scrollIdleTimer = Timer(
+      const Duration(milliseconds: 250),
+      _recheckAfterScrolling,
+    );
+  }
+
+  /// Asks for the tokens again if what is on screen has no classification.
+  ///
+  /// Scrolling up and down without letting the editor settle can leave a
+  /// screenful with its identifiers plain — the answer stops covering what is
+  /// being looked at, and since the document has not changed, nothing asks
+  /// again. This is that "ask again", scoped to the case that matters: a
+  /// viewport with none of it, once per document version, so a screenful that
+  /// genuinely has nothing to classify costs one round trip and not one per
+  /// scroll.
+  void _recheckAfterScrolling() {
+    if (!attached) return;
+    final config = lspConfig;
+    if (config == null || filePath == null) return;
+    if (!config.capabilities.semanticHighlighting) return;
+    if (_lastVisibleFirstLine < 0) return;
+
+    final version = controller.documentVersion;
+    if (_idleRecheckedVersion == version) return;
+    if (_syntaxHighlighter.hasClassificationBetween(
+      _lastVisibleFirstLine,
+      _lastVisibleLastLine,
+    )) {
+      return;
+    }
+
+    _idleRecheckedVersion = version;
+    // The document has not changed, so the answer will be the one already
+    // applied — and skipped, unless it is allowed to land.
+    _syntaxHighlighter.forceNextAnswer();
+    _lastSemanticTokenRequestVersion = -1;
+    // The request is made from paint, which is also what measures the viewport.
+    markNeedsPaint();
+  }
+
   void _pauseBracketHighlightDuringTyping() {
     _suspendBracketHighlight = true;
     _bracketHighlightResumeTimer?.cancel();
@@ -4475,6 +4754,15 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     _lineOffsetCache.clear();
     _caretInfoCache.clear();
     _lineIndentCache.clear();
+    // An answer changes what every line looks like, and this runs from a
+    // post-frame callback — after the frame that would have drawn it. Clearing
+    // the caches is not enough on its own: nothing has asked for another
+    // frame, so the classification is applied and simply never drawn. What
+    // stays on screen is the grammar-only painting from before it arrived,
+    // for as long as nothing else happens to repaint. Scrolling does, which is
+    // why moving the viewport appeared to fix it — and why a screenful that
+    // was never scrolled stayed plain. Typing does, which is why an edit did.
+    markNeedsPaint();
   }
 
   void _invalidateFoldRanges([int startLine = 0]) {
@@ -4632,9 +4920,32 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
         .clamp(0, controller.lineCount - 1)
         .toInt();
 
+    // A server without `semanticTokens/range` answers for the whole document,
+    // so the viewport is not part of the question. Asking again because the
+    // viewport moved would make the server re-analyse the file, and the client
+    // re-apply an identical answer, every time the user scrolls a screenful.
+    final viewportDecidesTheAnswer = config.supportsSemanticTokensRange;
+
+    // What the last paint was showing, for the check that runs once scrolling
+    // stops.
+    _lastVisibleFirstLine = startLine;
+    _lastVisibleLastLine = endLine;
+
+    // A classification that was applied and is now gone is gone for good: the
+    // question is only asked again when the document changes, so an answer lost
+    // after the fact leaves the editor on grammar colouring until the next
+    // edit — identifiers plain, keywords and literals still coloured, and
+    // nothing on the way to fix it. Asking again costs one round trip, once per
+    // loss, and turns that into a blink.
+    if (_syntaxHighlighter.takeLostClassification()) {
+      _syntaxHighlighter.forceNextAnswer();
+      _lastSemanticTokenRequestVersion = -1;
+    }
+
     if (_lastSemanticTokenRequestVersion == currentVersion &&
-        _lastSemanticTokenRequestStartLine == startLine &&
-        _lastSemanticTokenRequestEndLine == endLine) {
+        (!viewportDecidesTheAnswer ||
+            (_lastSemanticTokenRequestStartLine == startLine &&
+                _lastSemanticTokenRequestEndLine == endLine))) {
       return;
     }
 
@@ -4653,6 +4964,18 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
       }
 
       final endLineText = controller.getLineText(endLine);
+
+      // The edits this version is made of may still be waiting on the
+      // controller's sync debounce, which is longer than the wait above. Send
+      // them before asking, or the answer describes the text as it was a
+      // keystroke ago and its ranges land off by however much has been typed
+      // since.
+      await controller.flushPendingLspSync();
+      if (_semanticTokenRequestSerial != requestSerial) return;
+      if (controller.documentVersion != currentVersion ||
+          controller.openedFile != currentFile) {
+        return;
+      }
 
       try {
         final tokens = await config.getSemanticTokensRange(
@@ -4676,10 +4999,74 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     });
   }
 
+  /// Throws away everything built from a line's colouring when that colouring
+  /// has moved on.
+  ///
+  /// `_paragraphCache` is keyed by line index alone, and a laid-out paragraph
+  /// carries its colours baked in. Every path that changes colouring used to
+  /// have to remember to clear it, and the ones that cleared "from the edited
+  /// line down" left the lines *above* an edit holding paragraphs built before
+  /// the server's tokens arrived — visibly uncoloured, and staying that way
+  /// until something else cleared them. Which is why editing a short file
+  /// appeared to fix it (the edit is usually near the top, so almost everything
+  /// went) and editing a long one did not.
+  ///
+  /// Comparing against the highlighter's own version makes that impossible to
+  /// get wrong: the cache is only ever read while the colouring it was built
+  /// from is the current one.
+  void _dropParagraphsBuiltFromOldColouring() {
+    final colouring = _syntaxHighlighter.colouringVersion;
+    if (colouring == _paragraphColouringVersion) return;
+    _paragraphColouringVersion = colouring;
+
+    // Only the paragraphs: they are the things that carry colour. Line widths
+    // and heights are geometry — a line occupies the same space whatever it is
+    // painted in — and throwing those away here would make every keystroke
+    // re-measure a wrapped document from the top of the file.
+    _paragraphCache.clear();
+  }
+
   void updateDiagnostics(List<LspErrors> diagnostics) {
     if (_diagnostics != diagnostics) {
       _diagnostics = diagnostics;
+      _indexDiagnostics();
       markNeedsPaint();
+    }
+  }
+
+  /// Diagnostics that start on, or run through, each line — and the worst
+  /// severity on it, for the gutter.
+  ///
+  /// Built when they change rather than while painting. A declaration file the
+  /// server does not fully understand can carry a few thousand of them, and
+  /// both painters used to walk the whole list on every frame — one of them
+  /// copying and sorting it first. That is the cost of scrolling a big file,
+  /// paid per frame, for a list that only changes when the server speaks.
+  void _indexDiagnostics() {
+    _diagnosticsByLine.clear();
+    _lineSeverities.clear();
+
+    for (final diagnostic in _diagnostics) {
+      final startLine = diagnostic.range['start']?['line'] as int?;
+      if (startLine == null) continue;
+      final endLine = diagnostic.range['end']?['line'] as int? ?? startLine;
+      final severity = diagnostic.severity;
+
+      for (var line = startLine; line <= endLine; line++) {
+        (_diagnosticsByLine[line] ??= <LspErrors>[]).add(diagnostic);
+        if (severity == 1 || severity == 2) {
+          final worst = _lineSeverities[line];
+          if (worst == null || severity < worst) {
+            _lineSeverities[line] = severity;
+          }
+        }
+      }
+    }
+
+    // Severity order, so a red underline is drawn over a yellow one where they
+    // overlap. Sorted once here rather than on every frame.
+    for (final onLine in _diagnosticsByLine.values) {
+      onLine.sort((a, b) => b.severity.compareTo(a.severity));
     }
   }
 
@@ -4739,13 +5126,14 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     required this._enableGuideLines,
     required this._enableGutter,
     required this._enableGutterDivider,
+    this._cacheParagraphs = true,
     required GutterStyle gutterStyle,
     required this.gutterBuilder,
     required this._selectionStyle,
     required this._diagnostics,
     this.languageId,
     this.lspConfig,
-    this.filePath,
+    this._filePath,
     this.matchHighlightStyle,
     this.onHoverSetByTap,
     EdgeInsets? innerPadding,
@@ -4757,6 +5145,10 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
        _lineWrap = lineWrap,
        _innerPadding = innerPadding,
        _matchHighlightStyle = matchHighlightStyle {
+    // Whatever the widget was built with is indexed too, not only what arrives
+    // later through `updateDiagnostics`.
+    _indexDiagnostics();
+
     final fontSize = _textStyle?.fontSize ?? 14.0;
     final fontFamily = _textStyle?.fontFamily;
     final color =
@@ -4841,6 +5233,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
         );
       }
 
+      _scrollSettled();
       markNeedsPaint();
     });
 
@@ -5179,6 +5572,15 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     if (_enableGutter == value) return;
     _enableGutter = value;
     markNeedsLayout();
+    markNeedsPaint();
+  }
+
+  /// See `CodeForge.cacheParagraphs`.
+  set cacheParagraphs(bool value) {
+    if (_cacheParagraphs == value) return;
+    _cacheParagraphs = value;
+    // Anything already cached was built under the old rule.
+    _paragraphCache.clear();
     markNeedsPaint();
   }
 
@@ -7024,6 +7426,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     _resizeTimer?.cancel();
     _layoutDebounceTimer?.cancel();
     _foldComputeTimer?.cancel();
+    _scrollIdleTimer?.cancel();
     super.detach();
   }
 
@@ -7251,61 +7654,84 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
     );
   }
 
+  /// How tall a line is once wrapped.
+  ///
+  /// Measured from a *plain* paragraph, and cached. With wrapping on, the y of
+  /// a line is the sum of the heights of every line above it, so this is asked
+  /// for thousands of lines that are nowhere near the screen: scrolled to line
+  /// 6,000, one frame measured six thousand lines. Building each of those
+  /// through the grammar, and caching a paragraph for each, cost ~900ms per
+  /// frame on a 12,000-line file — the editor stopped responding entirely.
+  ///
+  /// A plain paragraph wraps where a styled one does: the editor's font is
+  /// monospaced, so bold and italic runs advance identically and the rows come
+  /// out the same. Painting still builds the styled paragraph for the lines on
+  /// screen; this only positions them.
   double _getWrappedLineHeight(int lineIndex) {
-    if (_lineHeightCache.containsKey(lineIndex)) {
-      return _lineHeightCache[lineIndex]!;
-    }
+    final cached = _lineHeightCache[lineIndex];
+    if (cached != null) return cached;
 
-    final lineText = controller.getLineText(lineIndex);
-
-    final para = _buildHighlightedParagraph(
-      lineIndex,
-      lineText,
+    final height = _buildParagraph(
+      controller.getLineText(lineIndex),
       width: _wrapWidth,
-    );
-    final height = para.height;
+    ).height;
 
     _lineHeightCache[lineIndex] = height;
-    _paragraphCache[lineIndex] = para;
-    _lineTextCache[lineIndex] = lineText;
-
     return height;
   }
 
+  /// The scroll extent of a wrapped document, from a sample of its lines.
+  ///
+  /// Sampling used to happen on every layout, through `_getWrappedLineHeight`
+  /// — which runs the grammar over the line and writes it into the paragraph
+  /// and height caches. The sampled lines are spread across the whole
+  /// document, so scrolling evicts them (the caches prune to a margin around
+  /// the viewport) and the next layout measures all sixty-four again. On a
+  /// 12,000-line file that was ~900ms per scroll frame: the editor stopped
+  /// responding, at a full core, for as long as the file was open.
+  ///
+  /// The average is what the estimate needs, so it is measured once per wrap
+  /// width and line count, and measured *plainly* — the grammar does not move
+  /// text, and this is an estimate of a scrollbar's extent.
   double _estimateWrappedHeight(int visibleLineCount) {
     if (visibleLineCount <= 0) return 0.0;
 
-    final sampleCount = visibleLineCount < kWrappedHeightSampleSize
-        ? visibleLineCount
-        : kWrappedHeightSampleSize;
-
-    if (sampleCount <= 0) {
-      return visibleLineCount * _lineHeight;
+    final lineCount = controller.lineCount;
+    if (_wrappedHeightPerLine == null ||
+        _wrappedHeightSampleWidth != _wrapWidth ||
+        _wrappedHeightSampleLineCount != lineCount) {
+      _wrappedHeightPerLine = _sampleWrappedHeightPerLine();
+      _wrappedHeightSampleWidth = _wrapWidth;
+      _wrappedHeightSampleLineCount = lineCount;
     }
 
-    final step = (visibleLineCount / sampleCount).ceil().clamp(
-      1,
-      visibleLineCount,
-    );
-    double sampledHeight = 0.0;
-    int measured = 0;
+    return visibleLineCount * _wrappedHeightPerLine!;
+  }
 
-    for (
-      int i = 0;
-      i < controller.lineCount && measured < sampleCount;
-      i += step
-    ) {
+  /// How tall an average line is once wrapped, from up to
+  /// [kWrappedHeightSampleSize] lines spread through the document.
+  double _sampleWrappedHeightPerLine() {
+    final lineCount = controller.lineCount;
+    if (lineCount <= 0) return _lineHeight;
+
+    final sampleCount = lineCount < kWrappedHeightSampleSize
+        ? lineCount
+        : kWrappedHeightSampleSize;
+    final step = (lineCount / sampleCount).ceil().clamp(1, lineCount);
+
+    double total = 0.0;
+    int measured = 0;
+    for (int i = 0; i < lineCount && measured < sampleCount; i += step) {
       if (_hasActiveFolds && _isLineFolded(i)) continue;
-      sampledHeight += _getWrappedLineHeight(i);
+      final lineText = controller.getLineText(i);
+      // A plain paragraph: same font, same width, so the same number of rows,
+      // and none of the grammar's cost. Nothing is cached — these lines are
+      // nowhere near the viewport.
+      total += _buildParagraph(lineText, width: _wrapWidth).height;
       measured++;
     }
 
-    if (measured == 0) {
-      return visibleLineCount * _lineHeight;
-    }
-
-    final averageHeight = sampledHeight / measured;
-    return averageHeight * visibleLineCount;
+    return measured == 0 ? _lineHeight : total / measured;
   }
 
   double _rowTopForBox(ui.TextBox box) {
@@ -7341,6 +7767,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
   @override
   void paint(PaintingContext context, Offset offset) {
     _checkDocumentVersionAndClearCache();
+    _dropParagraphsBuiltFromOldColouring();
 
     final canvas = context.canvas;
     final viewTop = vscrollController.offset;
@@ -7451,12 +7878,28 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
 
     _pruneViewportCaches(firstVisibleLine, lastVisibleLine);
     _scheduleVisibleSemanticTokens(firstVisibleLine, lastVisibleLine);
+    // A screenful either side, not just what is on screen. The visible lines
+    // have already been highlighted by this paint — synchronously, because
+    // that is what `getLineSpan` does when a line is not cached — so warming
+    // only those warms nothing. What costs is the *next* screenful: a viewport
+    // of ordinary declarations runs to 100ms of grammar work, and paying it
+    // during the frame that scrolls into it is what makes a big file feel
+    // stuck. Warming ahead moves that onto the background isolate, which
+    // `preHighlightLines` reaches for past fifty lines.
+    final margin = (lastVisibleLine - firstVisibleLine + 1).clamp(20, 200);
     unawaited(
-      _syntaxHighlighter.preHighlightLines(
-        firstVisibleLine,
-        lastVisibleLine,
-        controller.getLineText,
-      ),
+      _syntaxHighlighter
+          .preHighlightLines(
+            (firstVisibleLine - margin).clamp(0, lineCount - 1),
+            (lastVisibleLine + margin).clamp(0, lineCount - 1),
+            controller.getLineText,
+          )
+          // Repaint for what it warmed — and only then. Repainting when it
+          // warmed nothing would schedule the next frame from the paint of the
+          // last one, forever.
+          .then((warmed) {
+            if (warmed && attached) markNeedsPaint();
+          }),
     );
 
     _drawSearchHighlights(
@@ -7562,7 +8005,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
           _lineTextCache[i] = lineText;
         }
 
-        if (_paragraphCache.containsKey(i) && !isRTL) {
+        if (_cacheParagraphs && _paragraphCache.containsKey(i) && !isRTL) {
           paragraph = _paragraphCache[i]!;
         } else {
           paragraph = _buildHighlightedParagraph(
@@ -7570,15 +8013,17 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
             lineText,
             width: paragraphWidth,
           );
-          if (!isRTL) {
+          if (!isRTL && _cacheParagraphs) {
             _paragraphCache[i] = paragraph;
           }
 
           if (lineWrap) {
+            // The styled paragraph is the truth for a line on screen. What
+            // positioned it came from a plain one, which agrees for a
+            // monospaced font but need not for every font, so take the real
+            // height here rather than leaving the difference to overlap.
             _lineHeightCache[i] = paragraph.height;
-            if (isRTL) {
-              lineHeight = paragraph.height;
-            }
+            lineHeight = paragraph.height;
           }
         }
       }
@@ -8200,23 +8645,7 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
       }
     }
 
-    final Map<int, int> lineSeverityMap = {};
-    for (final diagnostic in _diagnostics) {
-      final startLine = diagnostic.range['start']?['line'] as int?;
-      final endLine = diagnostic.range['end']?['line'] as int?;
-      if (startLine != null) {
-        final severity = diagnostic.severity;
-        if (severity == 1 || severity == 2) {
-          final rangeEnd = endLine ?? startLine;
-          for (int line = startLine; line <= rangeEnd; line++) {
-            final existing = lineSeverityMap[line];
-            if (existing == null || severity < existing) {
-              lineSeverityMap[line] = severity;
-            }
-          }
-        }
-      }
-    }
+    final lineSeverityMap = _lineSeverities;
 
     final activeLineColor =
         gutterStyle.activeLineNumberColor ??
@@ -8773,7 +9202,11 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
 
     pruneIntKeyed(_lineTextCache);
     pruneIntKeyed(_lineWidthCache);
-    pruneIntKeyed(_lineHeightCache);
+    // `_lineHeightCache` is deliberately not pruned: a wrapped document
+    // positions a line by summing the heights above it, so evicting a height
+    // means measuring that line again on the next frame — thousands of times
+    // over, for lines far off screen. One double per line is a cheaper thing
+    // to keep than the work of re-measuring it.
     pruneIntKeyed(_paragraphCache);
     pruneIntKeyed(_lineIndentCache);
     pruneIntKeyed(_bracketCache);
@@ -8926,7 +9359,16 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
   ) {
     if (_diagnostics.isEmpty) return;
 
-    final sortedDiagnostics = List<LspErrors>.from(_diagnostics)
+    // Only what the visible lines carry, from the index — never the whole
+    // list, which on a big declaration file runs to thousands.
+    final visible = <LspErrors>{};
+    for (var line = firstVisibleLine; line <= lastVisibleLine; line++) {
+      final onLine = _diagnosticsByLine[line];
+      if (onLine != null) visible.addAll(onLine);
+    }
+    if (visible.isEmpty) return;
+
+    final sortedDiagnostics = visible.toList()
       ..sort((a, b) => (b.severity).compareTo(a.severity));
 
     for (final diagnostic in sortedDiagnostics) {
@@ -8937,8 +9379,6 @@ class _CodeFieldRenderer extends RenderBox implements MouseTrackerAnnotation {
       final startChar = startPos['character'] as int;
       final endLine = endPos['line'] as int;
       final endChar = endPos['character'] as int;
-
-      if (endLine < firstVisibleLine || startLine > lastVisibleLine) continue;
 
       final Color underlineColor;
       switch (diagnostic.severity) {

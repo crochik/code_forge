@@ -1,793 +1,371 @@
-<p align="left">
-  <a href="./README.md">English</a> |
-  <a href="./README.zh-CN.md">简体中文</a> |
-  <a href="./README.es.md">Español</a>
-</p>
+# code_forge — pure-Dart fork
 
-<h1 align="center">CodeForge</h1>
+A fork of [`code_forge`](https://pub.dev/packages/code_forge) 10.8.0 with the
+Rust editing core reimplemented in Dart. **No Rust, no `flutter_rust_bridge`, no
+cargokit, no native build step contributed by this package on any platform.**
 
-<p align="center">
-  <strong>A powerful, feature-rich code editor widget with backend written in rust</strong>
-</p>
+(An app may still build native code for other reasons — in ScriptTex's case
+`jni`, pulled in by `path_provider`, compiles a small C library on Linux and
+Windows. That is nothing to do with this package.)
 
-<p align="center">
-  <em>Bring VS Code-level editing experience to your Flutter apps</em>
-</p>
-
-<p align="center">
-  A complete and better alternative for <a href=https://pub.dev/packages/re_editor>re_editor</a>, <a href=https://pub.dev/packages/flutter_code_crafter>flutter_code_crafter</a>, <a href=https://pub.dev/packages/flutter_code_editor>flutter_code_editor</a>, <a href =https://pub.dev/packages/code_text_field>code_text_field</a>, etc
-</p>
-
-<p align="center">
-  <a href="https://pub.dev/packages/code_forge">
-    <img src="https://img.shields.io/pub/v/code_forge.svg?style=for-the-badge&logo=dart&logoColor=white&labelColor=0175C2&color=02569B" alt="Pub Version"/>
-  </a>
-  <a href="https://github.com/heckmon/code_forge/blob/main/LICENSE">
-    <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge&labelColor=333333&color=4CAF50" alt="License"/>
-  </a>
-  <a href="https://github.com/heckmon/code_forge/stargazers">
-    <img src="https://img.shields.io/github/stars/heckmon/code_forge.svg?style=for-the-badge&logo=github&labelColor=333333&color=FFD700" alt="GitHub Stars"/>
-  </a>
-  <a href="https://flutter.dev">
-    <img src="https://img.shields.io/badge/Platform-Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white" alt="Platform"/>
-  </a>
-</p>
-
----
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/heckmon/code_forge/refs/heads/main/gifs/1M.gif" alt="CodeForge Demo" width="800"/><sub><br>Smooth editing in 1M+ lines of code, tested on a decades old low end PC with pentium dual core CPU and no dedicated graphics card.</sub>
-</p>
-<p align="center">
-  <img src="https://raw.githubusercontent.com/heckmon/code_forge/refs/heads/main/gifs/code_forge_100k.gif" alt="CodeForge Demo" width="800"/><sub><br>LSP based intelligent lazy highlighting on 100k+ lines</sub>
-</p>
-
-### Feature demos: [CodeForge Features Showcase](https://heckmon.github.io/code_forge_demo/)
-
-> [!NOTE]
->
-> code_forge does **not** support Flutter web, as it relies on `dart:io` for core functionality. Use [code_forge_web](https://pub.dev/packages/code_forge_web) for web support.
-
-## What's new in 10.8.0:
-  - FIX: MacOS crash
-
-
-> [!NOTE]
->
-> The debug build is **60%** slower than the profile and release builds because of the frequent FFI calls made by the editor to the rust backend, which is expensive in JIT mode. It doesn't affect the AOT mode used in profile and release. So debug builds can get extremely slow and laggy on large files.
-
-
-## Why CodeForge?
-
-**CodeForge** is a next-generation code editor widget designed for developers who demand more. Whether you're building an IDE, a code snippet viewer, or an educational coding platform, CodeForge delivers:
-
-| Feature | CodeForge | Others |
-|---------|:---------:|:------:|
-| Syntax Highlighting | 180+ languages<br>[Availabe languages](https://github.com/reqable/re-highlight/tree/main/lib/languages) | ✅ |
-| Code Folding | Smart detection |  Limited |
-| LSP Integration | Full support | ❌ |
-| AI Completion | Multi-model | ❌ |
-| Semantic Tokens | Real-time | ❌ |
-| Diagnostics | Inline errors | ❌ |
-| Undo/Redo | Smart grouping | Basic |
-| Full Theming |[Available themes](https://github.com/reqable/re-highlight/tree/main/lib/styles) | Limited |
-
-
-### What makes CodeForge different from other editors:
-- Uses the rope data structure instead of regular char array to to handle large text.
-- Uses flutter's low level `RenderBox` and `ParagrahBuilder` to render text insted of `TextField` for efficiency.
-- Built in [Language Server Protocol](https://microsoft.github.io/language-server-protocol/) client
-- AI Code completion.
-
----
-
-To see working examples of all CodeForge features including AI Code Completion, LSP Integration, Smart Code Folding, Syntax Highlighting, Search and Replace, and RTL Language Support, visit the features showcase page above.
-
-### More Features
-
-<details>
-<summary><strong>Complete Feature List</strong></summary>
-
-#### Editor Core
-- **Rope Data Structure** — Optimized for large files
-- **180+ Languages** — Via `re_highlight` package
-- **Code Folding** — Smart block detection
-- **Indentation Guides** — Visual code structure
-- **Line Numbers** — With active line highlighting
-- **Smart Undo/Redo** — Timestamp-based grouping
-- **Search Highlighting** — Find and highlight matches
-- **Line Operations** — Move, duplicate, delete lines
-
-#### LSP Features
-- **Intelligent Completions** — Context-aware code suggestions with auto-import
-- **Hover Documentation** — Rich markdown tooltips with type information
-- **Real-time Diagnostics** — Errors and warnings with quick fixes
-- **Semantic Highlighting** — Token-based coloring with modifiers
-- **Signature Help** — Function signatures and parameter hints
-- **Code Actions** — Quick fixes and refactoring suggestions
-- **Inlay Hints** — Inline annotations for types and parameters
-- **Document Highlight** — Highlight symbol occurrences
-- **Document Colors** — Color value detection and picker
-- **Go to Definition** — Navigate to symbol definitions
-- **Symbol Renaming** — Rename symbols across workspace
-- **Multiple Protocols** — Stdio and WebSocket support
-- **Capability Control** — Selectively enable/disable LSP features
-
-#### Customization
-- **Full Theming** — Every element customizable
-- **Gutter Styling** — Colors, icons, sizes
-- **Selection Styling** — Cursor, selection, bubbles
-- **Popup Styling** — Suggestions, hover details
-- **Scrollbar Styling** — Scrollbar shape, color, line indicator.
-
-</details>
-
----
-
-## Installation
-
-- 1 . Make sure to install [rustup](https://rustup.rs/) and add it to the $PATH.
-
-- 2 . Add CodeForge to your `pubspec.yaml`:
+It is a drop-in replacement. The package name, the public API and the observable
+behaviour are unchanged, so switching is one line:
 
 ```yaml
 dependencies:
-  code_forge: ^10.8.0
+  code_forge:
+    path: packages/code_forge   # was: ^10.8.0
 ```
-- 3 . Then run:
+
+Nothing else in an app has to change — including `await RustLib.init()`, which
+is kept as a no-op shim precisely so it does not have to.
+
+---
+
+## What was actually replaced
+
+Upstream is 28,134 lines of Dart, of which 4,340 were the generated
+`flutter_rust_bridge` binding. The LSP client, syntax highlighting, themes and
+find/replace are untouched, and so are the widgets bar one four-line bug fix
+([below](#fixes-on-top-of-upstream)). Only the binding layer is new:
+
+| Upstream | Here |
+| --- | --- |
+| `lib/src/rust/frb_generated*.dart` (3,922 lines of marshalling) | deleted |
+| `lib/src/rust/api/rope.dart` → Rust `ropey` | `lib/src/core/rope.dart` — gap buffer + line index |
+| `lib/src/rust/api/editor.dart` → Rust `zed-sum-tree` | `lib/src/core/editor.dart` — block list + prefix sums |
+| Rust `unicode_bidi` | `lib/src/core/bidi.dart` — bidi class ranges |
+| `RustLib.init()` | `lib/src/core/rust_lib.dart` — no-op shim |
+
+## How equivalence was checked
+
+Not by reading the Rust and hoping. `tool/diff_harness.dart` and
+`tool/rust_reference/main.rs` drive both implementations through the same
+operations and the outputs are compared byte for byte:
+
+> **13,939 lines of output, zero differences.**
+
+Eleven documents — empty, no trailing newline, CRLF, blank lines, nested braces,
+HTML tags, colon indentation, RTL, mixed-direction, non-ASCII — crossed with
+every method, every offset from 0 to the document length, every line index
+including out-of-range ones, plus a 300-operation randomised `LayoutMap` script.
+See `tool/rust_reference/README.md` to re-run it.
+
+That comparison is what caught the two things below.
+
+### A reproduced bug
+
+`insertLine`, `removeLine` and `updateLine` act on line `max(lineIdx - 1, 0)`,
+not `lineIdx`. Upstream implemented them with a `zed-sum-tree` cursor slice at
+`Bias::Left`, which keeps `lineIdx - 1` blocks, so every mutation lands one line
+early — `insertLine(0)` and `insertLine(1)` both insert at the front.
+
+This is reproduced deliberately. The widget layer drives these from its own line
+bookkeeping and was written against the behaviour; silently shifting every
+mutation by one line would move the rendered layout. `test/layout_map_test.dart`
+pins it with the exact upstream outputs.
+
+### A fixed performance bug
+
+The first implementation here rebuilt the line index after every edit, which
+meant rescanning the document for newlines on every keystroke — 29ms on a 10MB
+file, two dropped frames for one character. `ropey` never paid that because its
+tree carries line counts. `_spliceLineStarts` now moves the index across an edit
+instead:
+
+| document | before | after |
+| --- | --- | --- |
+| 10 KB | 39.8 µs | 2.0 µs |
+| 100 KB | 269.2 µs | 1.9 µs |
+| 1 MB | 2,740.7 µs | 8.6 µs |
+| 10 MB | 29,210.9 µs | 89.4 µs |
+
+(one keystroke followed by a line query — the path typing actually takes)
+
+## Fixes on top of upstream
+
+**Ctrl + ← skipped a word.** `_moveWordLeft` in `lib/code_forge/code_area.dart`
+looked for the last word run in the line *before the caret* whose end fell short
+of the caret — which is never the run the caret is in, so it landed on the one
+before it. From the end of a line the caret jumped past every word to the first:
+
+```dart
+// upstream: always one word too far
+int newOffset = lineStart;
+for (final match in wordMatches) {
+  if (match.end >= lineText.length) break;
+  newOffset = lineStart + match.start;
+}
+```
+
+`lineText` already stops at the caret, so its *last* run is the word the caret
+is in — or the one before it, when the caret is on whitespace. Either way that
+run's start is the answer. Ctrl + Shift + ← is fixed with it; both go through
+this method. `test/word_navigation_test.dart` in the app pins the behaviour by
+driving the real editor with real key events.
+
+`_moveWordRight` and the Ctrl + Backspace/Delete handlers were correct and are
+untouched.
+
+**Semantic tokens were requested before the edits they describe were sent.**
+The render object waits 180 ms after an edit before asking the server for
+semantic tokens (`_scheduleVisibleSemanticTokens`); the controller sends the
+edit itself 200 ms after it happens (`_lspDocumentSyncDebounce`). The request
+therefore overtook its own `didChange`, and the server answered about the text
+as it stood a keystroke ago. Measured against the real server, with the buffer
+reading `const beta: number = 1;`:
+
+```
+answer:  (start 6, length 5)   ← `alpha`, one character too long
+         (start 11, …)         ← the `:`, one column too far right
+```
+
+Those ranges are painted over the current text: a five-character span across
+the four-character word `beta`, and everything after it off by one. The result
+is a word in two or three colours, which stays wrong until some later edit
+happens to re-request the tokens — the client's own guard only checks that the
+*client* has not changed since the request went out, not that the server has
+caught up.
+
+The fix is ordering, not timing: `CodeForgeController.flushPendingLspSync()` is
+new — it sends whatever is waiting on the debounce — and the token request
+awaits it first. Both messages travel the same connection, so the server now
+always has the edit before the question. `isLspReady` is exposed alongside it,
+because until the document has been opened an edit is in the buffer but not on
+the wire, and nothing that asks the server can tell.
+
+**The merged colouring of a line was cached under the line's text.**
+`SyntaxHighlighter.getLineSpan` stored the grammar-plus-semantic span in
+`_lineSpanCache`, which is keyed by the text of the line alone — while the
+semantic half of that span belongs to a line *index*. Two lines reading the
+same got whichever colouring was computed first, and a line with no semantic
+tokens of its own could be served another line's. Merged spans now live only in
+the line-keyed `_mergedCache`; `_lineSpanCache` keeps grammar-only spans, for
+which the text really is the whole key.
+
+Two smaller ones alongside it, both "do not paint what is known to be wrong":
+`updateSemanticTokens` now replaces every line the answer covered instead of
+merging into it, so a line whose tokens are gone loses its old colouring; and
+`applyDocumentEdit` drops the spans of a line it split or joined, and all of
+them when a replacement changes the line count, rather than shifting offsets
+that no longer mean anything. Grammar colouring holds until the server answers.
+
+**A semantic-token answer was applied even when it changed nothing.**
+`SyntaxHighlighter.updateSemanticTokens` drops every cache it has and makes the
+grammar re-run over the viewport — around 9ms on a 12,000-line document, plus a
+`compute()` isolate spawn when more than fifty lines need re-highlighting. The
+render object asks again whenever the *viewport* moves, so scrolling a large
+file paid that every 180ms. Two changes:
+
+- The highlighter compares an answer against the one it already applied and
+  returns early when they match. An edit clears that memory, so a genuinely new
+  answer is never skipped. This matters most for a document the server has no
+  analysis for, where every answer is an identical empty list.
+- `_scheduleVisibleSemanticTokens` only treats the viewport as part of the
+  question when the server actually supports `semanticTokens/range`. A server
+  that answers `full` returns the whole document however the viewport moved, so
+  re-asking made it re-analyse the file for an answer the client already had.
+
+Ten identical answers on a synthetic 12,000-line `.d.ts` cost 92ms before and
+9ms after — the one that changes something, and nine that no longer do.
+
+**A laid-out paragraph outlived the colouring it was painted from.** The render
+object caches `ui.Paragraph`s by line index, and a paragraph has its colours
+baked in. Nothing validated one on the way out — every path that changed
+colouring had to remember to clear the cache, and the paths that cleared "from
+the edited line down" left the lines *above* an edit painted from whatever
+colouring was current when they were last drawn.
+
+The visible form of that: a line painted before the server's semantic tokens
+arrived keeps its grammar-only colouring, so keywords and strings look right
+and the names the tokens would have classified — property names above all —
+stay plain. And an edit "fixed" it only for lines below the edit, which is why
+editing near the top of a short file looked like a cure and editing in the
+middle of a long one did nothing.
+
+`paint` now compares the highlighter's `colouringVersion` against the one the
+cache was filled at and empties it when they differ, which makes a stale
+paragraph unreachable rather than merely unlikely. Only the paragraphs: line
+widths and heights are geometry, unaffected by colour, and dropping those here
+would re-measure a wrapped document from the top on every keystroke.
+
+**Lines highlighted on the background isolate came back with no colours at
+all.** `_textSpanToSpanData`, which packs a highlighted line for the trip home
+from `compute`, declared `String? scope;` and never assigned it. Every span
+therefore arrived scopeless, and `_spanDataToTextSpan` rebuilt it with the base
+style: the right runs, in the right places, uncoloured — and cached that way,
+so a region stayed grey until something invalidated the line.
+
+Upstream this rarely showed, because the prefetch asked for exactly the lines
+paint had already highlighted synchronously, leaving it almost nothing to do.
+Widening it to a screenful either side (above) made the isolate the main
+producer of cache entries, and the defect became whole uncoloured regions while
+scrolling.
+
+The span now carries the `TextStyle` the renderer resolved rather than the name
+of a scope to look it up by — the isolate is handed the theme, so what it
+produced is already right — and a failure to use the isolate at all falls back
+to highlighting here rather than leaving the lines plain.
+
+**The grammar ran during paint, and there was nothing warmed ahead of it.**
+`getLineSpan` highlights a line on demand, so a viewport of lines nobody has
+visited yet is highlighted inside the frame that scrolls into it. Measured with
+`re_highlight` over TypeScript declarations:
+
+| line shape | per line |
+| --- | --- |
+| `readonly status: number;` | ~0.2ms |
+| a long generic signature (226 chars) | ~1.7ms |
+| a union of forty literals (491 chars) | ~2.2ms |
+| one 8,630-character line | ~50ms |
+
+A sixty-line screenful of real declarations is therefore 100ms or more of work
+inside one frame. Two changes:
+
+- **Warming ahead.** The prefetch that runs after paint asked for exactly the
+  lines just painted, which that paint had already highlighted synchronously;
+  it warmed nothing. It now covers a screenful either side — what the *next*
+  frame will need — on the background isolate, and repaints when it lands.
+- **A ceiling on line length.** Above 2,000 characters a line is painted in the
+  base style rather than run through the grammar. One such line is 50ms, and a
+  file of generated declarations can hold many.
+
+A third change, a per-frame time budget on highlighting, was tried and taken
+back out. It bounded the frame, but the lines it gave up on were painted plain
+*and cached that way by the render object*, so scrolled-past regions stayed
+uncoloured; and with `lineWrap` the height pass exhausted the budget every
+frame, which meant a repaint every frame and nothing ever coloured. Bounding
+the frame is not worth a document that does not finish colouring.
+
+**Wrapping made every frame cost as much as the scroll position.** With
+`lineWrap` on, a line's y is the sum of the heights of every line above it, and
+`_getWrappedLineHeight` measured a line by building its *highlighted* paragraph
+— running the grammar — and caching that paragraph. Scrolled to line 6,000, one
+frame measured six thousand lines; the height cache was pruned to a margin
+around the viewport, so the next frame measured them again. On a 12,000-line
+file that was ~900ms per frame: a full core, and an editor that did not
+respond. The scroll extent made it worse, sampling sixty-four lines spread
+through the document the same expensive way, on every layout.
+
+Heights now come from a plain paragraph — same font, same width, so the same
+rows, and none of the grammar's cost — and are never pruned, since one double
+per line is cheaper to keep than to measure twice. The extent's sample is taken
+once per wrap width and line count rather than per layout. When a line on
+screen is painted, its styled paragraph's height replaces the measured one, so
+a font whose bold runs wrap differently corrects itself.
+
+Ten scroll frames on a 12,000-line wrapped file: 18.6s before, ~1.1s after.
+`test/idle_test.dart` in the app carries a smoke test for it.
+
+**The editor repainted at frame rate, forever, for a blinking caret.** The
+caret is drawn on or off — every reader of `caretBlinkController` asks whether
+its value is above 0.5, and nothing uses the values in between — but it was
+driven by an `AnimationController` on `repeat(reverse: true)`, and
+`caretBlinkController.addListener(markNeedsPaint)` turns every tick of that
+into a full paint pass. An idle editor therefore repainted 60 or 120 times a
+second to produce a boolean that changes twice, and on a large document each of
+those passes walks the viewport.
+
+It is a 500ms `Timer.periodic` now, toggling the same controller between 1.0
+and 0.0 — two repaints a second instead of sixty — and it does not run at all
+while the editor is unfocused, where no caret is drawn. `test/idle_test.dart`
+in the app asserts that an idle editor schedules no frames and runs no ticker;
+both fail against the version above.
+
+**`tabSize` meant two things at once.** It is the width of a tab stop when
+painting, and it was also the number of characters `tabSpace` inserted — so
+`useSpaceAsTab: false, tabSize: 4` inserted *four tab characters*. The two only
+agreed at the default of 1. Here `tabSize` means columns, always: `tabSpace` is
+one tab character or `tabSize` spaces, and `indent`/`unindent` measure the
+indent with `tabSpace.length` rather than assuming it. Nothing changes at the
+defaults; a configuration that used to insert four tabs now inserts one.
+
+**`FindController` could find but not really replace.** The searching worked —
+matches, options, highlights — but the parts a find *and replace* bar is built
+out of were missing or wrong, and the app on top of this package needed them:
+
+- The match list was private. Nothing outside the controller could show the
+  matches, only step through them one at a time. `matches` exposes them now, as
+  a `FindMatch` carrying offsets rather than a `Match` bound to the string it
+  was run against — which goes stale the moment the buffer changes. Each one can
+  `locate` itself in the document on demand, so a list only pays for the rows it
+  paints.
+- **`replaceAll` and the highlights disagreed.** The search compiled its pattern
+  with `multiLine: true`; replace-all compiled the same source *without* it. A
+  regex anchored with `^` or `$` therefore replaced a different set of matches
+  than the one lit up on screen. It is built from the match list now, so what
+  disappears is exactly what was highlighted.
+- **Replace-all lost the caret.** It rewrote the whole document, which leaves
+  the caret at the end of the file. The caret is now carried across by the net
+  length change of the matches before it.
+- `replace()` left the view where it was, so a replace-one-by-one loop scrolled
+  away from itself after the first press. It follows the match it moves to.
+  `skip()` and `goToMatch(index)` are new, as are `open()` and `close()` — one
+  place for "open the finder on the selection" and "close it and give the editor
+  its caret back", so every way in behaves the same.
+- **Whole word bound to the wrong thing in a pattern of alternatives.** The
+  boundaries were concatenated, so `a|b` as a whole word compiled to
+  `\ba|b\b` — `a` at a word start *or* `b` at a word end. It is grouped now.
+- `hasPatternError` distinguishes a regex that does not compile from one that
+  matches nothing. Both used to leave the editor untouched with no way to tell
+  them apart.
+- `dispose` leaked its two `FocusNode`s.
+
+`test/find_replace_test.dart` in the app pins all of it, driving the real bar
+with real key events and taps.
+
+## Two deliberate differences
+
+**Offsets are UTF-16 code units, not Unicode scalar values.** `ropey` indexed by
+code point, but every consumer of those offsets is a Dart `String` or a Flutter
+`TextSelection`, both UTF-16 — `Rope.selection` in `lib/code_forge/rope.dart`
+passes one straight into `TextSelection.baseOffset`. Upstream therefore
+disagreed with its own callers on text containing emoji or other astral-plane
+characters. Here they agree. For text inside the BMP, which is all source code
+in practice, the two schemes give identical indices for every operation.
+
+**Out-of-range `insert` and `remove` clamp instead of panicking.** `ropey`
+panics, which crossed the FFI boundary as a process abort. Every neighbouring
+method already clamped.
+
+The bidi table (`lib/src/core/bidi.dart`) is a block-level approximation of the
+Unicode bidi property rather than a transcription of `DerivedBidiClass.txt`. The
+property that matters is exact — whitespace, digits and punctuation stay
+neutral, so spaced RTL text is not misread as mixed — but the class of a few
+individual marks inside RTL blocks can differ, which can move a segment boundary
+by one character in script-mixing text.
+
+## Performance
+
+Pure-Dart core, AOT, microseconds per operation:
+
+| document | type @cursor | `getText` cold | `getText` warm | `charToLine` | `line()` |
+| --- | --- | --- | --- | --- | --- |
+| 10 KB | 0.34 | 56.6 | 0.009 | 0.050 | 0.248 |
+| 100 KB | 0.13 | 227.6 | 0.004 | 0.027 | 0.201 |
+| 1 MB | 0.04 | 2,816.8 | 0.002 | 0.036 | 0.209 |
+| 10 MB | 0.08 | 27,441.3 | 0.003 | 0.043 | 0.189 |
+
+Typing is comparable to `ropey` measured in isolation (0.12–0.16 µs) and faster
+once the FFI crossing that upstream also paid is counted. `getText` is where the
+gap is largest: upstream had to materialise the string *and* marshal it across
+the boundary on every call — about 5.4 ms for a 1 MB document — where here an
+unedited document is returned from cache in 0.002 µs.
+
+`dart run tool/bench.dart` and `tool/bench2.dart` reproduce these.
+
+## Tests
 
 ```bash
-flutter pub get
+flutter test        # 47 tests
+flutter analyze
 ```
 
-- 4 . Add `await RustLib.init();` in your main function:
-```dart
-void main() async {
-  await RustLib.init(); // Add this line
-  runApp(const MyApp());
-}
-```
+Every expectation was captured from the Rust build rather than chosen, so the
+suite is a regression test against the original, not against my reading of it.
 
+## Licence
 
----
-
-## Quick Start
-
-### Basic Usage
-
-Import a theme and a language from the [re_highlight](https://pub.dev/packages/re_highlight) package and you are good to go. (Defaults to plain text and `lightFlairTheme`):
-
-```dart
-import 'package:flutter/material.dart';
-import 'package:code_forge/code_forge.dart';
-import 'package:re_highlight/languages/python.dart';
-import 'package:re_highlight/styles/atom-one-dark.dart';
-
-void main() => runApp(const MyApp());
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      home: Scaffold(
-        body: CodeForge(
-          language: langPython, // Defaults to Mode(), means plain text
-          editorTheme: atomOneDarkTheme, // Defaults to lightFlairTheme
-        ),
-      ),
-    );
-  }
-}
-```
-
-### With Controller
-
-For more control over the editor:
-
-```dart
-class _EditorState extends State<Editor> {
-  final _controller = CodeForgeController();
-  final _undoController = UndoRedoController();
-
-  @override
-  Widget build(BuildContext context) {
-    return CodeForge(
-      controller: _controller, // Optional controller for more features.
-      undoController: _undoController, // Optional undo controller to control the undo-redo operations.
-    );
-  }
-}
-```
-
----
-
-<details>
-
-<summary><h2>LSP Integration</h2></summary>
-
-Connect to any Language Server Protocol compatible server for intelligent code assistance.
-
-CodeForge provides a built-in LSP client that allows you to connect to any LSP server for intelligent highlighting, completions, hover details, diagnostics, and more.
-
-## Types
-#### There are two ways to configure LSP client with the `CodeForge`:
-1. Using WebSocket (easy and recommended)
-2. Using stdio
-
-<details>
-<summary><h3>1. Using WebSocket</h3></summary>
-
-The class `LspSocketConfig` is used to connect to an LSP server using WebSocket. It takes the following parameters:
-- `serverUrl`: The WebSocket URL of the LSP server.
-- `filePath`: A filePath is required by the LSP server to provide completions and diagnostics.
-- `workspacePath`: The workspace path is the current directory or the parent directory which holds the `filePath` file.
-- `languageId`: This is a server specific parameter. eg: `'python'` is the language ID used in basedpyright/pyright language server.
-
-You can easily start any language server using websocket using the  [lsp-ws-proxy](https://github.com/qualified/lsp-ws-proxy) package. For example, to start the basedpyright language server, you can use the following command:<br>
-(On Android, you can use [Termux](https://github.com/termux/termux-app))
-
-```bash
-cd /Downloads/lsp-ws-proxy_linux # Navigate to the directory where lsp-ws-proxy is located
-
-./lsp-ws-proxy --listen 5656 -- basedpyright-langserver --stdio # Start the pyright language server on port 5656
-```
-
-#### Example:
-create a `LspSocketConfig` object and pass it to the `CodeForgeController` widget.
-
-```dart
-final lspConfig = LspSocketConfig(
-    workspacePath: "/home/athul/Projects/lsp",
-    languageId: "python",
-    serverUrl: "ws://localhost:5656"
-),
-```
-Then pass the `lspConfig` instance to the `CodeForgeController` widget:
-
-```dart
-final _controller = CodeForgeController(
-  lspConfig: lspConfig // Pass the LspConfig here.
-)
-
-CodeForge(
-    controller: _controller, // Pass the controller here.
-    theme: anOldHopeTheme,
-    filePath: "/home/athul/Projects/lsp/example.py"
-),
-```
-</details>
-
-<details>
-<summary><h3>2. Using Stdio</h3></summary>
-
-This method is easy to start—no terminal setup or extra packages are needed—but it does require a bit more setup in your code. The `LspStdioConfig.start()` method connects to an LSP server using stdio and is asynchronous, so you'll typically use a `FutureBuilder` to handle initialization. It accepts the following parameters:
-- `executable`: Location of the LSP server executable file.
-- `args`: Arguments to pass to the LSP server executable.
-- `filePath`: A filePath is required by the LSP server to provide completions and diagnostics.
-- `workspacePath`: The workspace path is the current directory or parent directory which holds the `filePath` file.
-- `languageId`: This is a server specific parameter. eg: `'python'` is the language ID used in pyright language server.
-
-To get the `executable` path, you can use the `which` command in the terminal. For example, to get the path of the `basedpyright-langserver`, you can use the following command:
-
-```bash
-which basedpyright-langserver
-```
-
-#### Example:
-Create an async method to initialize the LSP configuration.
-```dart
-Future<LspConfig?> _initLsp() async {
-    try {
-      final config = await LspStdioConfig.start(
-        executable: '/home/athul/.nvm/versions/node/v20.19.2/bin/basedpyright-langserver',
-        args: ['--stdio'],
-        workspacePath: '/home/athul/Projects/lsp',
-        languageId: 'python',
-      );
-      
-      return config;
-    } catch (e) {
-      debugPrint('LSP Initialization failed: $e');
-      return null;
-    }
-  }
-  ```
-  Then use a `FutureBuilder` to initialize the LSP configuration and pass it to the `CodeForgeController` widget:
-```dart
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      home: Scaffold(
-        body: SafeArea(
-          child: FutureBuilder(
-            future: _initLsp(), // Call the async method to get the LSP config.
-            builder: (context, snapshot) {
-              if(snapshot.connectionState == ConnectionState.waiting) {
-                return Center(child: CircularProgressIndicator());
-              }
-              return CodeForge(
-                editorTheme: anOldHopeTheme,
-                controller: CodeForgeController(
-                  lspConfig: snapshot.data // Pass the config here.
-                ),
-                filePath: '/home/athul/Projects/lsp/example.py',
-                textStyle: TextStyle(fontSize: 15, fontFamily: 'monospace'),
-              );
-            }
-          ),
-        ) 
-      ),
-    );
-  }
-```
-</details>
-
-<hr style="height: 1px; border: none; border-top: 1px">
-
-### Dart LSP Example Using Stdio
-
-```dart
-Future<LspConfig> setupDartLsp() async {
-  return await LspStdioConfig.start(
-    executable: 'dart',
-    args: ['language-server', '--protocol=lsp'],
-    workspacePath: '/path/to/your/project',
-    languageId: 'dart',
-  );
-}
-
-// In your widget
-@override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      home: Scaffold(
-        body: SafeArea(
-          child: FutureBuilder<LspConfig>(
-            future: setupDartLsp(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return CircularProgressIndicator();
-              }
-              return CodeForge(
-                language: langDart,
-                textStyle: GoogleFonts.jetBrainsMono(),
-                controller: CodeForgeController(
-                  lspConfig: snapshot.data
-                ),
-                filePath: '/path/to/your/file.dart', // Mandatory field
-              )
-            },
-          ),
-        ),
-      ),
-    );
-  }
-```
-</details>
-
----
-
-<details>
-<summary><h2> Customization</h2></summary>
-
-CodeForge offers extensive customization options for every aspect of the editor.
-
-### Theme & Styling
-
-```dart
-CodeForge(
-  controller: controller,
-  language: langDart,
-  
-  // Editor theme (syntax colors)
-  editorTheme: vs2015Theme,
-  
-  // Text styling
-  textStyle: GoogleFonts.jetBrainsMono(fontSize: 14),
-
-  // AI Completion styling
-  aiCompletionTextStyle: TextStyle(
-    color: Colors.grey, // Change the color of the AI completion text
-    fontStyle: FontStyle.italic, // Make the AI completion text italic
-    ...
-  ),
-  
-  // Selection & cursor
-  selectionStyle: CodeSelectionStyle(
-    cursorColor: Colors.white,
-    selectionColor: Colors.blue.withOpacity(0.3),
-    cursorBubbleColor: Colors.blue,
-    ...
-  ),
-  
-  // Gutter (line numbers & fold icons)
-  gutterStyle: GutterStyle(
-    lineNumberStyle: TextStyle(color: Colors.grey),
-    backgroundColor: Color(0xFF1E1E1E),
-    activeLineNumberColor: Colors.white,
-    foldedIconColor: Colors.grey,
-    unfoldedIconColor: Colors.grey,
-    errorLineNumberColor: Colors.red,
-    warningLineNumberColor: Colors.orange,
-    ...
-  ),
-  
-  // Suggestion popup
-  suggestionStyle: SuggestionStyle(
-    backgroundColor: Color(0xFF252526),
-    textStyle: TextStyle(color: Colors.white),
-    elevation: 8,
-    ...
-  ),
-  
-  // Hover documentation
-  hoverDetailsStyle: HoverDetailsStyle(
-    backgroundColor: Color(0xFF252526),
-    textStyle: TextStyle(color: Colors.white),
-    ...
-  ),
-
-  // Highlight matching text using [controller.findWord()] and [controller.findRegex()]
-  matchHighlightStyle: const MatchHighlightStyle(
-    currentMatchStyle: TextStyle(
-      backgroundColor: Color(0xFFFFA726),
-    ),
-    otherMatchStyle: TextStyle(
-      backgroundColor: Color(0x55FFFF00),
-    ),
-    ...
-  ),
-
-  scrollbarDecoration: const ScrollbarDecoration(
-    thumbColor: _editorTheme['root']?.color?.withAlpha(150),
-    thickness: 15,
-    lineNumberStyle: TextStyle(
-      color: _editorTheme['root']?.backgroundColor ?? Colors.black,
-      fontSize: widget.textStyle?.fontSize ?? 14,
-      fontFamily: widget.textStyle?.fontFamily,
-      fontWeight: widget.textStyle?.fontWeight ?? FontWeight.bold,
-    ),
-    ...
-  );
-)
-```
-
-### Feature Toggles
-
-```dart
-CodeForge(
-  // Enable/disable features
-  enableFolding: true,        // Code folding
-  enableGutter: true,         // Line numbers
-  enableGuideLines: true,     // Indentation guides
-  enableGutterDivider: false, // Gutter separator line
-  enableLocalSuggestions: true,    // Enable or disable local word suggestions. False by default.
-  enableKeyboardSuggestions: true // Suggestions from the OS keyboard
-  
-  // Behavior
-  readOnly: false,            // Read-only mode
-  autoFocus: true,            // Auto-focus on mount
-  lineWrap: false,            // Line wrapping
-)
-```
-</details>
-
----
-
-<details>
-<summary><h2>API Reference</h2></summary>
-
-### CodeForge Widget
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `controller` | `CodeForgeController?` | Text and selection controller |
-| `findController` | `FindController?` | Finder controller for managing search functionality |
-| `undoController` | `UndoRedoController?` | Undo/redo history controller |
-| `editorTheme` | `Map<String, TextStyle>?` | Syntax color theme |
-| `language` | `Mode?` | Syntax highlighting language |
-| `focusNode` | `FocusNode?` | Focus node for managing keyboard focus |
-| `textStyle` | `TextStyle?` | Base text style |
-| `ghostTextStyle` | `TextStyle?` | Text style for ghost text (inline suggestions) |
-| `innerPadding` | `EdgeInsets?` | Padding inside the editor content area |
-| `verticalScrollController` | `ScrollController?` | Custom scroll controller for vertical scrolling |
-| `horizontalScrollController` | `ScrollController?` | Custom scroll controller for horizontal scrolling |
-| `selectionStyle` | `CodeSelectionStyle?` | Selection styling |
-| `gutterStyle` | `GutterStyle?` | Gutter styling |
-| `suggestionStyle` | `SuggestionStyle?` | Suggestion popup styling |
-| `hoverDetailsStyle` | `HoverDetailsStyle?` | Hover popup styling |
-| `matchHighlightStyle` | `MatchHighlightStyle?` | Highlight the matching words in the controller.findWord() API |
-| `filePath` | `String?` | File path for LSP |
-| `initialText` | `String?` | Initial editor content |
-| `readOnly` | `bool` | Read-only mode |
-| `lineWrap` | `bool` | Line wrapping |
-| `autoFocus` | `bool` | Auto-focus on mount |
-| `enableFolding` | `bool` | Enable code folding |
-| `enableGuideLines` | `bool` | Show indentation guides |
-| `enableGutter` | `bool` | Show line numbers |
-| `enableGutterDivider` | `bool` | Show gutter divider |
-| `enableSuggestions` | `bool` | Enable autocomplete suggestions |
-| `enableKeyboardSuggestions` | `bool` | Show auto completions in OS virtual keyboard |
-| `extraLanguages` | `List<Mode>` | Useful for languages that embed other grammars (for example, TSX using XML/HTML sub-languages). |
-| `keyboardType` | `TextInputType` | Type of virtual keyboard |
-| `customCodeSnippets` | `List<CustomCodeSnippet>?` | Custom code snippets shown in the suggestion popup |
-| `deleteFoldRangeOnDeletingFirstLine` | `bool` | When true, deleting the first line of a folded block removes the entire block |
-| `finderBuilder` | `PreferredSizeWidget Function(FindController findController)?` | Builder for custom Finder widget |
-
-### CodeForgeController
-
-```dart
-final controller = CodeForgeController();
-
-// Text operations
-controller.text = 'Hello, World!';
-String content = controller.text;
-controller.getLineText(int lineIndex);
-controller.insertText(String text, int line, int character);
-controller.insertAtCurrentCursor(String text);
-
-// Selection & modification
-controller.selection = TextSelection(baseOffset: 0, extentOffset: 5);
-controller.selectAll();
-controller.copy();
-controller.cut();
-controller.paste();
-
-// Line operations
-int lineCount = controller.lineCount;
-String line = controller.getLineText(0);
-int lineStart = controller.getLineStartOffset(0);
-controller.duplicateLine();
-controller.moveLineDown();
-controller.moveLineUp();
-controller.backspace();
-controller.delete();
-
-// Folding
-controller.foldAll();
-controller.unfoldAll();
-controller.toggleFold(lineNumber);
-
-// Search & find
-controller.findWord(String word, matchCase: false, matchWholeWord: false);
-controller.findRegex(String pattern);
-controller.searchHighlights = [
-  SearchHighlight(start: 0, end: 5, color: Colors.yellow),
-];
-
-// Scroll navigation
-controller.scrollToLine(int line);
-
-// Inlay hints
-await controller.fetchInlayHints(int startLine, int startCharacter, int endLine, int endCharacter);
-controller.showInlayHints();
-controller.hideInlayHints();
-controller.setInlayHints(List<InlayHint> hints);
-controller.clearInlayHints();
-
-// Document colors
-await controller.fetchDocumentColors();
-
-// Document highlights
-await controller.fetchDocumentHighlights(int line, int character);
-controller.clearDocumentHighlights();
-
-// LSP features
-await controller.callSignatureHelp();
-controller.getCodeAction();
-
-// Editor decorations
-controller.setGitDiffDecorations(
-  addedRanges: [(int startLine, int endLine), ...],
-  removedRanges: [...],
-  modifiedRanges: [...],
-  addedColor: const Color(0xFF4CAF50),
-  removedColor: const Color(0xFFE53935),
-  modifiedColor: const Color(0xFF2196F3),
-);
-controller.clearGitDiffDecorations();
-
-controller.addLineDecoration(LineDecoration decoration);
-controller.addLineDecorations(List<LineDecoration> decorations);
-controller.removeLineDecoration(String id);
-controller.addGutterDecoration(GutterDecoration decoration);
-controller.addGutterDecorations(List<GutterDecoration> decorations);
-controller.removeGutterDecoration(String id);
-controller.clearGutterDecorations();
-
-// Ghost text (inline suggestions)
-controller.setGhostText(GhostText ghostText);
-controller.clearGhostText();
-
-// File operations
-controller.saveFile();
-
-// Navigation
-controller.pressLeftArrowKey(isShiftPressed: false);
-controller.pressRightArrowKey(isShiftPressed: false);
-controller.pressUpArrowKey(isShiftPressed: false);
-controller.pressDownArrowKey(isShiftPressed: false);
-controller.pressHomeKey(isShiftPressed: false);
-controller.pressEndKey(isShiftPressed: false);
-controller.pressDocumentHomeKey(isShiftPressed: false);
-controller.pressDocumentEndKey(isShiftPressed: false);
-controller.pressWordLeftArrowKey(isShiftPressed: false);
-controller.pressWordRightArrowKey(isShiftPressed: false);
-
-// Multi-cursor operations
-controller.addMultiCursor(int line, int character);
-controller.clearMultiCursor();
-controller.backspaceAtAllCursors();
-controller.insertAtAllCursors(String textToInsert);
-
-```
-There are more methods available in the CodeForgeController API. You can see the complete list [here](https://pub.dev/documentation/code_forge/latest/code_forge_controller/CodeForgeController-class.html#instance-methods)
-
-### GutterStyle
-
-```dart
-GutterStyle({
-  TextStyle? lineNumberStyle,
-  Color? backgroundColor,
-  double? gutterWidth,
-  IconData foldedIcon,
-  IconData unfoldedIcon,
-  double? foldingIconSize,
-  Color? foldedIconColor,
-  Color? unfoldedIconColor,
-  Color? activeLineNumberColor,
-  Color? inactiveLineNumberColor,
-  Color errorLineNumberColor,
-  Color warningLineNumberColor,
-  Color? foldedLineHighlightColor,
-})
-```
-
-### CodeSelectionStyle
-
-```dart
-CodeSelectionStyle({
-  Color? cursorColor,
-  Color selectionColor,
-  Color cursorBubbleColor,
-})
-```
-
-### SuggestionStyle
-```dart
-SuggestionStyle(
-  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-  backgroundColor: Colors.grey[900]!,
-  focusColor: Colors.blue.withOpacity(0.3),
-  hoverColor: Colors.blue.withOpacity(0.1),
-  splashColor: Colors.blue.withOpacity(0.2),
-  textStyle: TextStyle(color: Colors.white),
-)
-```
-
-### HoverDetailsStyle
-```dart
-HoverDetailsStyle(
-  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-  backgroundColor: Colors.grey[850]!,
-  focusColor: Colors.blue.withOpacity(0.3),
-  hoverColor: Colors.blue.withOpacity(0.1),
-  splashColor: Colors.blue.withOpacity(0.2),
-  textStyle: TextStyle(color: Colors.white),
-)
-```
-
-### MatchHighlightStyle
-```dart
-matchHighlightStyle: const MatchHighlightStyle(
-  currentMatchStyle: TextStyle(
-    backgroundColor: Color(0xFFFFA726),
-  ),
-  otherMatchStyle: TextStyle(
-    backgroundColor: Color(0x55FFFF00),
-  ),
-),
-```
-
-### LspClientCapabilities
-
-Controls which LSP features are enabled during language server initialization.
-
-```dart
-// Pass to LspSocketConfig or LspStdioConfig
-final lspConfig = LspSocketConfig(
-  workspacePath: "/path/to/workspace",
-  languageId: "dart",
-  serverUrl: "ws://localhost:5656",
-  capabilities: LspClientCapabilities(
-    semanticHighlighting: true,  // Semantic token highlighting
-    codeCompletion: true,        // Code completion suggestions
-    hoverInfo: true,             // Hover documentation
-    codeAction: true,            // Code actions and quick fixes
-    signatureHelp: true,         // Signature help
-    documentColor: true,         // Document color detection
-    documentHighlight: true,     // Symbol occurrence highlighting
-    codeFolding: true,           // Code folding ranges
-    inlayHint: true,             // Inlay hints
-    goToDefinition: true,        // Go to definition
-    rename: true,                // Symbol renaming
-  ),
-);
-```
-
-</details>
-
----
-<details>
-<summary><h2>Keyboard Shortcuts</h2></summary>
-CodeForge supports a variety of keyboard shortcuts for efficient editing:
-
-### Editing
-- **Ctrl+C** — Copy selected text.
-- **Ctrl+X** — Cut selected text.
-- **Ctrl+V** — Paste text.
-- **Ctrl+A** — Select all text.
-- **Ctrl+D** — Duplicate current line.
-- **Ctrl+Z** — Undo last action.
-- **Ctrl+Y** — Redo last action.
-- **Ctrl+Backspace** — Delete word backward.
-- **Ctrl+Delete** — Delete word forward.
-- **Alt + Click** — Multi-cursor.
-
-### Navigation
-- **Ctrl+Arrow Left** — Move cursor to previous word.
-- **Ctrl+Arrow Right** — Move cursor to next word.
-- **Ctrl+Shift+Arrow Left** — Select to previous word.
-- **Ctrl+Shift+Arrow Right** — Select to next word.
-- **Ctrl+Shift+Arrow Up** — Move current line up.
-- **Ctrl+Shift+Arrow Down** — Move current line down.
-
-### Indentation
-- **Tab** — Indent current line or accept AI completion/suggestion.
-- **Shift+Tab** — Unindent current line.
-
-### Suggestions & AI Completion
-- **Ctrl+.** — Show available LSP code actions.
-- **Ctrl + Shift + Space** — Show available LSP signature help.
-- **Ctrl + Alt** — Show LSP inlay hints.
-- **Arrow Up/Down** — Navigate through suggestions.
-- **Enter/Tab** — Accept current suggestion.
-- **Escape** — Close suggestions or hover details.
-
-### Selection
-- **Shift+Arrow Keys** — Extend selection.
-- **Shift+Home** — Select to line start.
-- **Shift+End** — Select to line end.
-
-## Search
-- **Ctrl + F** — Show search bar.
-- **Ctrl + H** — Show replace bar.
-
-</details>
-
----
-
-## Used by
-
- - [ROXUM IDE](https://github.com/heckmon/roxum-ide) - A minimal and powerful IDE/Code editor for Android.
-
-  ##### *Want to show your app here? Create a discussion in [this](https://github.com/heckmon/code_forge/discussions/categories/used-by) thread with your app details.*
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](https://github.com/heckmon/code_forge/blob/main/LICENSE) file for details.
-
----
-
-<p align="center">
-  <strong>Built with ❤️ for the Flutter community</strong>
-</p>
-
-<p align="center">
-  <a href="https://github.com/heckmon/code_forge">
-    <img src="https://img.shields.io/badge/⭐_Star_on_GitHub-333333?style=for-the-badge&logo=github" alt="Star on GitHub"/>
-  </a>
-</p>
+MIT, from upstream — see `LICENSE`. Original work by Athul A S
+(<https://github.com/heckmon/code_forge>). This fork keeps that licence and
+changes only the editing core.
