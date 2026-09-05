@@ -1,4 +1,4 @@
-import '../src/rust/api/editor.dart';
+import '../src/core/editor.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -344,6 +344,15 @@ class CodeForgeController implements DeltaTextInputClient {
       }
       await lspConfig!.openDocument(openedFile!);
       _lspReady = true;
+      // `openedFile = path` reads the file into the buffer, and the text setter
+      // schedules a full sync of it. The `didOpen` just sent carries the same
+      // text, so letting that sync fire would hand the server the whole
+      // document a second time — and a server that re-reads a declaration file
+      // on every full change would parse a 12,000-line one twice per switch.
+      _lspDocumentSyncTimer?.cancel();
+      _lspDocumentSyncTimer = null;
+      _pendingLspContentChanges.clear();
+      _pendingLspFullText = null;
       _cclsForcedRefreshAttempted = false;
 
       if (lspConfig!.capabilities.semanticHighlighting &&
@@ -604,6 +613,15 @@ class CodeForgeController implements DeltaTextInputClient {
 
   /// Currently opened file.
   String? get openedFile => _openedFile;
+
+  /// Whether the language server has the open document and is being told about
+  /// edits to it.
+  ///
+  /// False until the connection has been initialized and the document opened,
+  /// which happens asynchronously after construction. Edits made before that
+  /// are in the buffer but not on the wire, so anything that asks the server
+  /// about the document should wait for this.
+  bool get isLspReady => _lspReady;
 
   VoidCallback? userCodeAction;
 
@@ -1739,13 +1757,16 @@ class CodeForgeController implements DeltaTextInputClient {
   /// Custom tabSize for the editor.
   int tabSize = 1;
 
-  /// The tabspace inserted on tab key press.
-  String get tabSpace {
-    if (useSpaceAsTab) {
-      return ' ' * tabSize;
-    }
-    return '\t' * tabSize;
-  }
+  /// What a tab key press inserts.
+  ///
+  /// One tab character, or [tabSize] spaces. Upstream inserted `tabSize` tab
+  /// characters, which made the field mean two things at once: the width of a
+  /// tab stop when painting (see `_columnsFor` in the render object) and the
+  /// number of characters to insert. It only agreed with itself at the default
+  /// of 1, where a tab is also painted one column wide. Here `tabSize` means
+  /// columns, always, and everything that used it as a length now asks
+  /// [tabSpace] how long it is.
+  String get tabSpace => useSpaceAsTab ? ' ' * tabSize : '\t';
 
   /// Whether the line structure has changed (lines added or removed).
   bool lineStructureChanged = false;
@@ -2063,6 +2084,63 @@ class CodeForgeController implements DeltaTextInputClient {
       );
     } else {
       setSelectionSilently(TextSelection.collapsed(offset: endOffset));
+    }
+  }
+
+  /// Moves the cursor [lines] lines, keeping its column. Negative goes up.
+  ///
+  /// A page is however much the editor is showing, which is the editor's to
+  /// know, so it arrives as a line count rather than being guessed at here.
+  ///
+  /// Folded regions are stepped over rather than counted, the same way the
+  /// arrow keys treat them: a page moves by what is on screen. Running out of
+  /// document lands on its first or last position rather than stopping short —
+  /// a page up from near the top reaches the top, which is the whole reason to
+  /// press it twice.
+  ///
+  /// If [isShiftPressed] is true, extends the selection to where it lands.
+  void pressPageKey({required int lines, bool isShiftPressed = false}) {
+    if (lines == 0) return;
+
+    final currentLine = getLineAtOffset(selection.extentOffset);
+    final lastLine = lineCount - 1;
+    final direction = lines.isNegative ? -1 : 1;
+
+    final wanted = lines.abs();
+    var targetLine = currentLine;
+    var moved = 0;
+    for (; moved < wanted; moved++) {
+      var next = targetLine + direction;
+      while (next > 0 && next < lastLine && isLineInFoldedRegion(next)) {
+        next += direction;
+      }
+      if (next < 0 || next > lastLine) break;
+      targetLine = next;
+    }
+    if (isLineInFoldedRegion(targetLine)) {
+      targetLine = getFoldStartForLine(targetLine) ?? targetLine;
+    }
+
+    final int newOffset;
+    if (moved < wanted) {
+      // Within a page of the edge, so the page ends at the edge.
+      newOffset = direction.isNegative ? 0 : length;
+    } else {
+      final column = selection.extentOffset - getLineStartOffset(currentLine);
+      final targetStart = getLineStartOffset(targetLine);
+      final targetLength = getLineText(targetLine).runes.length;
+      newOffset = (targetStart + column.clamp(0, targetLength)).clamp(0, length);
+    }
+
+    if (isShiftPressed) {
+      setSelectionSilently(
+        TextSelection(
+          baseOffset: selection.baseOffset,
+          extentOffset: newOffset,
+        ),
+      );
+    } else {
+      setSelectionSilently(TextSelection.collapsed(offset: newOffset));
     }
   }
 
@@ -2826,6 +2904,20 @@ class CodeForgeController implements DeltaTextInputClient {
     _lspDocumentSyncTimer = Timer(_lspDocumentSyncDebounce, () {
       unawaited(_flushLspDocumentSync());
     });
+  }
+
+  /// Sends the edits still sitting on the sync debounce, now.
+  ///
+  /// Every pull request — semantic tokens, definition, hover — is answered
+  /// from the server's copy of the document, and edits only reach it when the
+  /// debounce above expires. A request issued inside that window is answered
+  /// about the text of a keystroke ago: token ranges then land a column or two
+  /// off, which paints a word in two or three colours until the next edit
+  /// happens to re-request them. Awaiting this first closes the window.
+  Future<void> flushPendingLspSync() async {
+    _lspDocumentSyncTimer?.cancel();
+    _lspDocumentSyncTimer = null;
+    await _flushLspDocumentSync();
   }
 
   Future<void> _flushLspDocumentSync() async {
@@ -4115,9 +4207,9 @@ class CodeForgeController implements DeltaTextInputClient {
           .join('\n');
 
       final lines = selectedBlock.split('\n');
-      final addedChars = tabSize * lines.length;
+      final addedChars = tabSpace.length * lines.length;
       final newSelection = TextSelection(
-        baseOffset: selection.baseOffset + tabSize,
+        baseOffset: selection.baseOffset + tabSpace.length,
         extentOffset: selection.extentOffset + addedChars,
       );
 
@@ -4152,7 +4244,7 @@ class CodeForgeController implements DeltaTextInputClient {
       final unindentedBlock = lines
           .map(
             (line) => line.startsWith(tabSpace)
-                ? line.substring(tabSize)
+                ? line.substring(tabSpace.length)
                 : line.replaceFirst(RegExp(r'^ +'), ''),
           )
           .join('\n');
@@ -4160,7 +4252,7 @@ class CodeForgeController implements DeltaTextInputClient {
       int removedChars = 0;
       for (final line in lines) {
         if (line.startsWith(tabSpace)) {
-          removedChars += tabSize;
+          removedChars += tabSpace.length;
         } else {
           removedChars += RegExp(r'^ +').stringMatch(line)?.length ?? 0;
         }
@@ -4170,7 +4262,7 @@ class CodeForgeController implements DeltaTextInputClient {
         baseOffset:
             selection.baseOffset -
             (lines.first.startsWith(tabSpace)
-                ? tabSize
+                ? tabSpace.length
                 : (RegExp(r'^ +').stringMatch(lines.first)?.length ?? 0)),
         extentOffset: selection.extentOffset - removedChars,
       );
@@ -4187,7 +4279,7 @@ class CodeForgeController implements DeltaTextInputClient {
 
       int removeCount = 0;
       if (line.startsWith(tabSpace)) {
-        removeCount = tabSize;
+        removeCount = tabSpace.length;
       } else {
         removeCount = RegExp(r'^ +').stringMatch(line)?.length ?? 0;
       }

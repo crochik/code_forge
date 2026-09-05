@@ -8,4 +8,4 @@ export 'code_forge/undo_redo.dart';
 export 'code_forge/find_controller.dart';
 export 'code_forge/utils.dart';
 export 'LSP/lsp.dart';
-export 'src/rust/frb_generated.dart' show RustLib;
+export 'src/core/rust_lib.dart' show RustLib;
